@@ -1,0 +1,15 @@
+[Unit]
+Description=HubClock Backend (FastAPI)
+After=network.target mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory={{PROJECT_ROOT}}
+Environment="PYTHONPATH={{PROJECT_ROOT}}/backend"
+ExecStart={{PROJECT_ROOT}}/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+User={{USER}}
+
+[Install]
+WantedBy=multi-user.target

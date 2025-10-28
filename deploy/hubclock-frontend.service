@@ -1,0 +1,15 @@
+[Unit]
+Description=HubClock Frontend (Vite Dev Server)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{PROJECT_ROOT}}/frontend
+Environment="npm_config_cache={{PROJECT_ROOT}}/.cache/npm"
+ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 5173
+Restart=always
+RestartSec=5
+User={{USER}}
+
+[Install]
+WantedBy=multi-user.target

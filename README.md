@@ -26,6 +26,7 @@ HubClock is a small-footprint time tracking kiosk for a five-employee deli. It i
 2. **Configure environment**
    ```bash
    cp backend/.env.example backend/.env
+   cp frontend/.env.example frontend/.env
    # edit credentials when needed
    ```
 
@@ -84,6 +85,7 @@ scripts/
 - PIN protects all routes except the public clock page. Set it in **Settings** before first use.
 - Use MySQL’s timezone-aware configuration (`DEFAULT_TIME_ZONE='+00:00'`) to avoid DST surprises.
 - Run reports regularly and export data by copying table results if payroll needs archival outside the app.
+- The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. Leave it as `/api` when using an HTTP proxy, or point it to the backend origin such as `http://127.0.0.1:8000` for direct access.
 
 ## Deployment (Ubuntu)
 

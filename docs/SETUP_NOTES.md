@@ -23,6 +23,7 @@
 - Clock-in page at `/` uses masked input and auto-detects state via `/clock/status`.
 - Daily vs summary reports accessible under `/dashboard`; לחצן הייצוא שולח בקשת GET ל-`/reports/daily/export` או `/reports/export` בהתאם לסוג הדוח, עם פרמטר `include_payments` לבחירת הוספת רכיבי שכר.
 - נתוני עובדים/משמרות ניתנים לייצוא ב-`GET /employees/export` ולהחזרה ב-`POST /employees/import` (עם דגל `replace_existing`).
+- כתובת ה-API בצד הלקוח ניתנת להגדרה דרך המשתנה `VITE_API_BASE_URL` בזמן בנייה או על ידי הצבת `window.__HUBCLOCK_API_BASE__` לפני טעינת האפליקציה. ערך ברירת המחדל `/api` דורש פרוקסי שמנתב לבקאנד.
 
 ## Notes for Codex Agents
 - Key files: `backend/app/main.py`, `frontend/src/pages/ClockPage.tsx`, `frontend/src/pages/SettingsPage.tsx`.

@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import get_engine, session_scope
-from app.main import ensure_legacy_schema, populate_setting_defaults
+from app.main import SCHEMA_VERSION, ensure_legacy_schema, populate_setting_defaults
 from app.models import Base, Setting
 
 
@@ -24,10 +24,13 @@ def main() -> None:
                 db_password=settings.mysql_password,
                 brand_name="העסק שלי",
                 theme_color="#1b3aa6",
+                schema_version=SCHEMA_VERSION,
             )
             session.add(setting)
         else:
             populate_setting_defaults(setting)
+            if setting.schema_version < SCHEMA_VERSION:
+                setting.schema_version = SCHEMA_VERSION
     print("Schema ensured.")
 
 

@@ -27,6 +27,8 @@ const SettingsPage: React.FC = () => {
     primary_db_active,
     secondary_db_active,
     primary_database,
+    schema_ok,
+    schema_version,
     brand_name,
     theme_color: themeColorSetting,
     refresh,
@@ -169,7 +171,9 @@ useEffect(() => {
         secondary_db_password: payload.secondary_db_password as string,
         primary_db_active: primaryActive,
         secondary_db_active: secondaryActive,
-        primary_database: primaryChoice
+        primary_database: primaryChoice,
+        schema_ok,
+        schema_version
       });
     } catch (error) {
       setDbStatus({ kind: "error", message: formatApiError(error) });
@@ -225,16 +229,19 @@ useEffect(() => {
   };
 
   const ensureSchema = async () => {
-    try {
-      setDbStatus(null);
-      const response = await api.post<{ ok: boolean; message: string }>("/db/init", null, {
-        params: { target: schemaTarget }
-      });
-      setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
-    } catch (error) {
-      setDbStatus({ kind: "error", message: formatApiError(error) });
+  try {
+    setDbStatus(null);
+    const response = await api.post<{ ok: boolean; message: string }>("/db/init", null, {
+      params: { target: schemaTarget }
+    });
+    setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
+    if (response.data.ok) {
+      await refresh();
     }
-  };
+  } catch (error) {
+    setDbStatus({ kind: "error", message: formatApiError(error) });
+  }
+};
 
   const exportSettings = async () => {
   try {
@@ -280,6 +287,12 @@ useEffect(() => {
     <div className="card">
       <h2>הגדרות המערכת</h2>
       <p>נהל את ההגדרות המרכזיות ואת חיבור מסד הנתונים של עמדת הנוכחות.</p>
+
+      {!schema_ok && (
+        <div className="status error">
+          גרסת סכימת בסיס הנתונים ({schema_version}) אינה מעודכנת. הריצו "יצירת/עדכון סכימה" כדי לאפשר את כל היכולות החדשות.
+        </div>
+      )}
 
       {generalStatus && <div className={`status ${generalStatus.kind}`}>{generalStatus.message}</div>}
 

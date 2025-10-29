@@ -66,3 +66,4 @@ class Setting(Base):
     primary_database: Mapped[Optional[str]] = mapped_column(String(16), default="primary")
     primary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     secondary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2)

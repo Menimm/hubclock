@@ -7,6 +7,7 @@
 - הרחבות UI להגדרות: טפסים נפרדים למסד א' וב', בדיקות חיבור לפי יעד, בחירת מסד ראשי ב-radio, והרצת יצירת סכימה עם פרמטר `target`.
 - Dockerfile וסקריפט `scripts/build_docker.sh` להרכבת דימוי אחוד; ה-API משרת את ה-frontend המקורמל מתוך `frontend/dist`.
 - עריכת ומחיקת משמרות מתוך הדוח היומי (כולל אימות PIN) באמצעות מסלולי `PUT /time-entries/{id}` ו-`DELETE /time-entries/{id}`.
+- מעקב אחר גרסת סכימת בסיס הנתונים (`schema_version`) והתרעה ממשקית כאשר יש לעדכן את הסכימה להפעלת יכולות חדשות.
 
 ### Changed
 - מסלולי `/db/test` ו-`/db/init` תומכים בפרמטר `target` (primary/secondary/both/active) ומחזירים הודעות מפורטות לפי היעד.

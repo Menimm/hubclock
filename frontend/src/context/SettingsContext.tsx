@@ -17,6 +17,8 @@ interface SettingsResponse {
   primary_db_active: boolean | null;
   secondary_db_active: boolean | null;
   primary_database: DatabaseKey | null;
+  schema_version: number | null;
+  schema_ok: boolean | null;
   brand_name: string | null;
   theme_color: string | null;
 }
@@ -35,6 +37,8 @@ interface Settings {
   primary_db_active: boolean;
   secondary_db_active: boolean;
   primary_database: DatabaseKey;
+  schema_version: number;
+  schema_ok: boolean;
   brand_name: string;
   theme_color: string;
 }
@@ -61,6 +65,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     primary_db_active: true,
     secondary_db_active: false,
     primary_database: "primary",
+    schema_version: 0,
+    schema_ok: true,
     brand_name: "העסק שלי",
     theme_color: "#1b3aa6"
   });
@@ -82,6 +88,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       primary_db_active: response.data.primary_db_active ?? true,
       secondary_db_active: response.data.secondary_db_active ?? false,
       primary_database: (response.data.primary_database as DatabaseKey) ?? "primary",
+      schema_version: response.data.schema_version ?? prev.schema_version,
+      schema_ok: response.data.schema_ok ?? prev.schema_ok,
       brand_name: response.data.brand_name ?? "העסק שלי",
       theme_color: response.data.theme_color ?? "#1b3aa6"
     }));

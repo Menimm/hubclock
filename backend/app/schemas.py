@@ -126,6 +126,8 @@ class SettingsOut(BaseModel):
     primary_db_active: bool = True
     secondary_db_active: bool = False
     primary_database: str = "primary"
+    schema_version: int
+    schema_ok: bool
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
 
@@ -183,6 +185,7 @@ class SettingsExport(BaseModel):
     primary_database: Optional[str] = None
     primary_db_active: Optional[bool] = None
     secondary_db_active: Optional[bool] = None
+    schema_version: Optional[int] = None
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
@@ -201,6 +204,7 @@ class SettingsImport(BaseModel):
     primary_database: Optional[str] = Field(None, pattern="^(primary|secondary)$")
     primary_db_active: Optional[bool] = None
     secondary_db_active: Optional[bool] = None
+    schema_version: Optional[int] = None
     pin: Optional[str] = Field(None, min_length=4, max_length=12)
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None

@@ -90,6 +90,7 @@ scripts/
 - The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. By default it points to `http://127.0.0.1:8000`; set it to `/api` if you proxy requests through a web server.
 - `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`.
 - Use **Settings → מסדי נתונים** לבדיקת חיבור לכל יעד (`בדיקת חיבור ראשי/משני`) ולהגדרת היעד עבור יצירת סכימה (`מסדי נתונים פעילים`, `ראשי`, `משני`, או `שני המסדים`).
+- אם מתקבלת התרעה על גרסת סכימה מיושנת, הריצו את "יצירת/עדכון סכימה" (בטאב ההגדרות) כך שהסכמה תעודכן ויכולות חדשות כמו עריכת משמרות יפעלו.
 
 ## Deployment (Ubuntu)
 

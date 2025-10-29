@@ -25,6 +25,7 @@ from .security import hash_pin, verify_pin
 
 settings = get_settings()
 app = FastAPI(title="HubClock API", version="0.1.0")
+SCHEMA_VERSION = 2
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 DATABASE_TARGETS = {"primary", "secondary"}
@@ -194,6 +195,7 @@ def ensure_legacy_schema(engine) -> None:
                 "primary_database": "ALTER TABLE settings ADD COLUMN primary_database VARCHAR(16)",
                 "primary_db_active": "ALTER TABLE settings ADD COLUMN primary_db_active BOOLEAN NOT NULL DEFAULT 1",
                 "secondary_db_active": "ALTER TABLE settings ADD COLUMN secondary_db_active BOOLEAN NOT NULL DEFAULT 0",
+                "schema_version": "ALTER TABLE settings ADD COLUMN schema_version INT NOT NULL DEFAULT 1",
             }
             for column, ddl in alterations.items():
                 if column not in columns:
@@ -221,6 +223,8 @@ def populate_setting_defaults(setting: Setting) -> None:
         setting.primary_db_active = True
     if setting.secondary_db_active is None:
         setting.secondary_db_active = False
+    if setting.schema_version is None:
+        setting.schema_version = SCHEMA_VERSION
 
 
 def get_active_employee_by_code(db: Session, employee_code: str) -> Employee:
@@ -415,12 +419,15 @@ def create_database_schema(target: str = "active"):
                         primary_database=current_setting.primary_database if current_setting and current_setting.primary_database in DATABASE_TARGETS else determine_primary_label(current_setting),
                         primary_db_active=current_setting.primary_db_active if current_setting else True,
                         secondary_db_active=current_setting.secondary_db_active if current_setting else False,
+                        schema_version=SCHEMA_VERSION,
                     )
                     populate_setting_defaults(new_setting)
                     temp_session.add(new_setting)
                     temp_session.commit()
                 else:
                     populate_setting_defaults(existing)
+                    if existing.schema_version < SCHEMA_VERSION:
+                        existing.schema_version = SCHEMA_VERSION
                     temp_session.flush()
                     temp_session.commit()
         except OperationalError as exc:
@@ -598,7 +605,9 @@ def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: S
 def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Session = Depends(get_db)):
     if not payload.pin:
         raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
-    _validate_admin_pin(db, payload.pin)
+    setting = _validate_admin_pin(db, payload.pin)
+    if setting.schema_version < SCHEMA_VERSION:
+        raise HTTPException(status_code=409, detail="גרסת הסכימה בבסיס הנתונים ישנה. אנא הריצו יצירת/עדכון סכימה במסך ההגדרות לפני עריכת משמרות.")
 
     entry = db.get(TimeEntry, entry_id)
     if not entry:
@@ -637,7 +646,9 @@ def delete_time_entry(
 ):
     if not payload.pin:
         raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
-    _validate_admin_pin(db, payload.pin)
+    setting = _validate_admin_pin(db, payload.pin)
+    if setting.schema_version < SCHEMA_VERSION:
+        raise HTTPException(status_code=409, detail="גרסת הסכימה בבסיס הנתונים ישנה. אנא הריצו יצירת/עדכון סכימה במסך ההגדרות לפני מחיקת משמרות.")
 
     entry = db.get(TimeEntry, entry_id)
     if not entry:
@@ -977,6 +988,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
             primary_database="primary",
             primary_db_active=True,
             secondary_db_active=False,
+            schema_version=SCHEMA_VERSION,
             brand_name="העסק שלי",
             theme_color="#1b3aa6",
         )
@@ -997,6 +1009,8 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
         primary_db_active=bool(setting.primary_db_active),
         secondary_db_active=bool(setting.secondary_db_active),
         primary_database=setting.primary_database or "primary",
+        schema_version=setting.schema_version,
+        schema_ok=setting.schema_version == SCHEMA_VERSION,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
     )
@@ -1085,6 +1099,8 @@ def update_settings(payload: schemas.SettingsUpdate, db: Session = Depends(get_d
         primary_db_active=bool(setting.primary_db_active),
         secondary_db_active=bool(setting.secondary_db_active),
         primary_database=setting.primary_database or "primary",
+        schema_version=setting.schema_version,
+        schema_ok=setting.schema_version == SCHEMA_VERSION,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
     )
@@ -1108,6 +1124,7 @@ def export_settings(db: Session = Depends(get_db)):
             primary_database="primary",
             primary_db_active=True,
             secondary_db_active=False,
+            schema_version=SCHEMA_VERSION,
             brand_name="העסק שלי",
             theme_color="#1b3aa6",
         )
@@ -1127,6 +1144,7 @@ def export_settings(db: Session = Depends(get_db)):
         primary_database=setting.primary_database,
         primary_db_active=bool(setting.primary_db_active),
         secondary_db_active=bool(setting.secondary_db_active),
+        schema_version=setting.schema_version,
         pin_hash=setting.pin_hash,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
@@ -1170,6 +1188,8 @@ def import_settings(payload: schemas.SettingsImport, db: Session = Depends(get_d
 
     if payload.primary_database is not None and payload.primary_database in DATABASE_TARGETS:
         setting.primary_database = payload.primary_database
+    if payload.schema_version is not None:
+        setting.schema_version = payload.schema_version
     if payload.brand_name is not None:
         setting.brand_name = payload.brand_name
     if payload.theme_color is not None:
@@ -1203,6 +1223,8 @@ def import_settings(payload: schemas.SettingsImport, db: Session = Depends(get_d
         primary_db_active=bool(setting.primary_db_active),
         secondary_db_active=bool(setting.secondary_db_active),
         primary_database=setting.primary_database or "primary",
+        schema_version=setting.schema_version,
+        schema_ok=setting.schema_version == SCHEMA_VERSION,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
     )

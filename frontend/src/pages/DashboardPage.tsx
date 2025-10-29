@@ -50,8 +50,15 @@ type Mode = "month" | "custom";
 type ReportType = "summary" | "daily";
 type StatusMessage = { kind: "success" | "error"; message: string } | null;
 
+interface PinModalConfig {
+  title: string;
+  confirmLabel: string;
+  message?: string;
+  onConfirm: (pin: string) => Promise<void>;
+}
+
 const DashboardPage: React.FC = () => {
-  const { currency } = useSettings();
+  const { currency, schema_ok } = useSettings();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [mode, setMode] = useState<Mode>("month");
   const [reportType, setReportType] = useState<ReportType>("summary");
@@ -69,6 +76,10 @@ const DashboardPage: React.FC = () => {
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [includePayments, setIncludePayments] = useState(false);
+  const [pinModal, setPinModal] = useState<PinModalConfig | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isConfirmingPin, setIsConfirmingPin] = useState(false);
   const currencyFormatter = useMemo(
     () =>
       new Intl.NumberFormat("he-IL", {
@@ -183,47 +194,74 @@ const DashboardPage: React.FC = () => {
     return local.toISOString().slice(0, 16);
   };
 
+  const toNaiveIsoString = (value: string) => {
+    if (!value) return value;
+    if (value.length === 16) return `${value}:00`;
+    if (value.length === 19) return value;
+    return value;
+  };
+
   const resetEditingState = () => {
     setEditingEntryId(null);
     setEditClockIn("");
     setEditClockOut("");
   };
 
+  useEffect(() => {
+    if (!schema_ok) {
+      resetEditingState();
+    }
+  }, [schema_ok]);
+
   const startEditingShift = (shift: DailyShift) => {
+    if (!schema_ok) {
+      setDailyStatus({ kind: "error", message: "יש לעדכן את סכימת בסיס הנתונים לפני עריכת משמרות" });
+      return;
+    }
     setDailyStatus(null);
     setEditingEntryId(shift.entry_id);
     setEditClockIn(toInputValue(shift.clock_in));
     setEditClockOut(toInputValue(shift.clock_out));
   };
 
-  const saveShiftChanges = async () => {
-    if (!editingEntryId) {
-      return;
-    }
-    if (!editClockIn || !editClockOut) {
-      setDailyStatus({ kind: "error", message: "יש להזין זמני כניסה ויציאה תקינים" });
-      return;
-    }
-    const pin = window.prompt("הזינו קוד PIN לאישור העדכון");
-    if (!pin) {
-      return;
-    }
-
+  const performSaveShift = async (pin: string) => {
+    if (!editingEntryId) return;
     setIsSavingEntry(true);
+    setDailyStatus(null);
     try {
       await api.put(`/time-entries/${editingEntryId}`, {
         pin: pin.trim(),
-        clock_in: new Date(editClockIn).toISOString(),
-        clock_out: new Date(editClockOut).toISOString()
+        clock_in: toNaiveIsoString(editClockIn),
+        clock_out: toNaiveIsoString(editClockOut)
       });
       await runReport();
       setDailyStatus({ kind: "success", message: "המשמרת עודכנה בהצלחה" });
       resetEditingState();
     } catch (error) {
       setDailyStatus({ kind: "error", message: formatApiError(error) });
+      throw error;
     } finally {
       setIsSavingEntry(false);
     }
+  };
+
+  const saveShiftChanges = () => {
+    if (!editingEntryId) {
+      return;
+    }
+    if (!schema_ok) {
+      setDailyStatus({ kind: "error", message: "יש לעדכן את סכימת בסיס הנתונים לפני עריכת משמרות" });
+      return;
+    }
+    if (!editClockIn || !editClockOut) {
+      setDailyStatus({ kind: "error", message: "יש להזין זמני כניסה ויציאה תקינים" });
+      return;
+    }
+    openPinModal({
+      title: "אימות עדכון משמרת",
+      confirmLabel: "עדכון",
+      onConfirm: async (pin) => performSaveShift(pin)
+    });
   };
 
   const cancelShiftEditing = () => {
@@ -231,16 +269,9 @@ const DashboardPage: React.FC = () => {
     setDailyStatus(null);
   };
 
-  const deleteShift = async (shift: DailyShift) => {
-    if (!window.confirm("למחוק את המשמרת שנבחרה?")) {
-      return;
-    }
-    const pin = window.prompt("הזינו קוד PIN למחיקה");
-    if (!pin) {
-      return;
-    }
-
+  const performDeleteShift = async (shift: DailyShift, pin: string) => {
     setIsSavingEntry(true);
+    setDailyStatus(null);
     try {
       await api.delete(`/time-entries/${shift.entry_id}`, {
         data: { pin: pin.trim() }
@@ -252,8 +283,53 @@ const DashboardPage: React.FC = () => {
       setDailyStatus({ kind: "success", message: "המשמרת נמחקה" });
     } catch (error) {
       setDailyStatus({ kind: "error", message: formatApiError(error) });
+      throw error;
     } finally {
       setIsSavingEntry(false);
+    }
+  };
+
+  const openPinModal = (config: PinModalConfig) => {
+    setPinValue("");
+    setPinError(null);
+    setPinModal(config);
+  };
+
+  const closePinModal = () => {
+    setPinModal(null);
+    setPinValue("");
+    setPinError(null);
+  };
+
+  const requestDeleteShift = (shift: DailyShift) => {
+    if (!schema_ok) {
+      setDailyStatus({ kind: "error", message: "יש לעדכן את סכימת בסיס הנתונים לפני מחיקת משמרות" });
+      return;
+    }
+    openPinModal({
+      title: "אימות מחיקת משמרת",
+      confirmLabel: "מחיקה",
+      message: "המחיקה בלתי הפיכה. האם להמשיך?",
+      onConfirm: async (pin) => performDeleteShift(shift, pin)
+    });
+  };
+
+  const handlePinSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pinModal) return;
+    if (!pinValue.trim()) {
+      setPinError("נא להזין קוד PIN");
+      return;
+    }
+    setIsConfirmingPin(true);
+    setPinError(null);
+    try {
+      await pinModal.onConfirm(pinValue.trim());
+      closePinModal();
+    } catch (error) {
+      setPinError(formatApiError(error));
+    } finally {
+      setIsConfirmingPin(false);
     }
   };
 
@@ -311,6 +387,11 @@ const DashboardPage: React.FC = () => {
         <h3>
           יומן משמרות: {dailyReport.range_start} – {dailyReport.range_end}
         </h3>
+        {!schema_ok && (
+          <div className="status error" style={{ marginBottom: "1rem" }}>
+            גרסת סכימת בסיס הנתונים אינה מעודכנת. הפעלו "יצירת/עדכון סכימה" במסך ההגדרות כדי לאפשר עריכת משמרות.
+          </div>
+        )}
         {dailyStatus && (
           <div className={`status ${dailyStatus.kind}`} style={{ marginBottom: "1rem" }}>
             {dailyStatus.message}
@@ -338,7 +419,7 @@ const DashboardPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {employee.shifts.map((shift) => {
-                      const isEditing = editingEntryId === shift.entry_id;
+                      const isEditing = schema_ok && editingEntryId === shift.entry_id;
                       let durationPreview: number | string = shift.duration_minutes;
                       if (isEditing) {
                         if (!editClockIn || !editClockOut) {
@@ -402,14 +483,19 @@ const DashboardPage: React.FC = () => {
                               </div>
                             ) : (
                               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                                <button className="secondary" type="button" onClick={() => startEditingShift(shift)}>
+                                <button
+                                  className="secondary"
+                                  type="button"
+                                  onClick={() => startEditingShift(shift)}
+                                  disabled={!schema_ok || isSavingEntry}
+                                >
                                   עריכה
                                 </button>
                                 <button
                                   className="secondary"
                                   type="button"
-                                  onClick={() => deleteShift(shift)}
-                                  disabled={isSavingEntry}
+                                  onClick={() => requestDeleteShift(shift)}
+                                  disabled={!schema_ok || isSavingEntry}
                                 >
                                   מחיקה
                                 </button>
@@ -501,6 +587,50 @@ const DashboardPage: React.FC = () => {
           </label>
         </div>
       </div>
+
+      {pinModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <form className="modal" onSubmit={handlePinSubmit}>
+            <h3>{pinModal.title}</h3>
+            {pinModal.message && <p style={{ marginTop: 0 }}>{pinModal.message}</p>}
+            <label htmlFor="adminPin">קוד PIN</label>
+            <input
+              id="adminPin"
+              type="password"
+              value={pinValue}
+              onChange={(event) => setPinValue(event.target.value)}
+              autoFocus
+              disabled={isConfirmingPin || isSavingEntry}
+              placeholder="הזינו את קוד ה-PIN"
+              minLength={4}
+              maxLength={12}
+              required
+            />
+            {pinError && (
+              <div className="status error" style={{ marginTop: "0.75rem" }}>
+                {pinError}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={closePinModal}
+                disabled={isConfirmingPin}
+              >
+                ביטול
+              </button>
+              <button
+                type="submit"
+                className="primary"
+                disabled={isConfirmingPin || isSavingEntry}
+              >
+                {isConfirmingPin ? "מאמת..." : pinModal.confirmLabel}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {status && <div className={`status ${status.kind}`}>{status.message}</div>}
 

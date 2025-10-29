@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from openpyxl import Workbook
 from sqlalchemy import create_engine, delete, func, inspect, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import schemas
@@ -281,7 +281,7 @@ def _load_setting() -> Optional[Setting]:
     try:
         with session_scope() as session:
             return session.scalar(select(Setting))
-    except (OperationalError, RuntimeError):
+    except (OperationalError, RuntimeError, ProgrammingError):
         return None
 
 

@@ -158,7 +158,7 @@ useEffect(() => {
         secondary_db_password: secondaryPassword ?? "",
         secondary_db_active: secondaryActive
       };
-      await api.put("/settings", payload);
+      const response = await api.put("/settings", payload);
       setDbStatus({ kind: "success", message: "הגדרות מסדי הנתונים נשמרו" });
       setLocal({
         db_host: payload.db_host ?? "",
@@ -172,8 +172,8 @@ useEffect(() => {
         primary_db_active: primaryActive,
         secondary_db_active: secondaryActive,
         primary_database: primaryChoice,
-        schema_ok,
-        schema_version
+        schema_ok: response.data.schema_ok ?? schema_ok,
+        schema_version: response.data.schema_version ?? schema_version
       });
     } catch (error) {
       setDbStatus({ kind: "error", message: formatApiError(error) });
@@ -221,8 +221,13 @@ useEffect(() => {
         payload.db_port = Number(targetPort);
       }
 
-      const response = await api.post<{ ok: boolean; message: string }>("/db/test", payload);
-      setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
+      const response = await api.post<{ ok: boolean; message: string; schema_version?: number | null; schema_ok?: boolean | null }>("/db/test", payload);
+      const { message, schema_version, schema_ok: schemaOkFlag } = response.data;
+      let finalMessage = message;
+      if (schema_version !== undefined && schema_version !== null) {
+        finalMessage = `${message} — גרסת סכימה ${schema_version}${schemaOkFlag ? " (עדכנית)" : " (נדרש עדכון)"}`;
+      }
+      setDbStatus({ kind: response.data.ok ? "success" : "error", message: finalMessage });
     } catch (error) {
       setDbStatus({ kind: "error", message: formatApiError(error) });
     }

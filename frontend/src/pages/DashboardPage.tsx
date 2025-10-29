@@ -224,6 +224,12 @@ const DashboardPage: React.FC = () => {
     setEditClockOut(toInputValue(shift.clock_out));
   };
 
+  const openPinModal = (config: PinModalConfig) => {
+    setPinValue("");
+    setPinError(null);
+    setPinModal(config);
+  };
+
   const performSaveShift = async (pin: string) => {
     if (!editingEntryId) return;
     setIsSavingEntry(true);
@@ -287,12 +293,6 @@ const DashboardPage: React.FC = () => {
     } finally {
       setIsSavingEntry(false);
     }
-  };
-
-  const openPinModal = (config: PinModalConfig) => {
-    setPinValue("");
-    setPinError(null);
-    setPinModal(config);
   };
 
   const closePinModal = () => {

@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from sqlalchemy import create_engine, delete, func, inspect, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import schemas
@@ -300,24 +300,58 @@ def _run_connection_test(overrides: Optional[schemas.DBTestRequest]) -> schemas.
         return schemas.DBTestResponse(ok=False, message=str(exc))
     temp_engine = create_engine(url, pool_pre_ping=True)
     schema_missing: list[str] = []
+    schema_version: Optional[int] = None
+    schema_ok: Optional[bool] = None
     try:
         with temp_engine.connect() as connection:
             connection.execute(select(1))
             schema_missing = _check_schema(connection)
+            try:
+                result = connection.execute(text("SELECT schema_version FROM settings ORDER BY id LIMIT 1"))
+                row = result.first()
+                if row is not None:
+                    value = row[0]
+                    schema_version = int(value) if value is not None else 0
+                if schema_version is None:
+                    schema_version = 0
+                schema_ok = schema_version >= SCHEMA_VERSION if schema_version else False
+            except SQLAlchemyError:
+                schema_version = 0
+                schema_ok = False
     except OperationalError as exc:
-        return schemas.DBTestResponse(ok=False, message=f"{target}: {str(exc.orig) if exc.orig else str(exc)}")
+        return schemas.DBTestResponse(
+            ok=False,
+            message=f"{target}: {str(exc.orig) if exc.orig else str(exc)}",
+            schema_version=None,
+            schema_ok=None,
+        )
     finally:
         temp_engine.dispose()
 
     if schema_missing:
+        version_fragment = (
+            f" (גרסת סכימה {schema_version} - נדרש עדכון)"
+            if schema_version is not None
+            else ""
+        )
         return schemas.DBTestResponse(
             ok=False,
-            message=f"{target.capitalize()} connection succeeded but missing tables: {', '.join(schema_missing)}",
+            message=f"{target.capitalize()} connection succeeded but missing tables: {', '.join(schema_missing)}{version_fragment}",
+            schema_version=schema_version,
+            schema_ok=False if schema_version is not None else None,
+        )
+
+    version_fragment = ""
+    if schema_version is not None:
+        version_fragment = (
+            f" (גרסת סכימה {schema_version} - {'עדכנית' if schema_ok else 'נדרש עדכון'})"
         )
 
     return schemas.DBTestResponse(
         ok=True,
-        message=f"{target.capitalize()} connection and schema verified",
+        message=f"{target.capitalize()} connection and schema verified{version_fragment}",
+        schema_version=schema_version,
+        schema_ok=schema_ok,
     )
 
 

@@ -154,6 +154,8 @@ class SettingsUpdate(BaseModel):
 class DBTestResponse(BaseModel):
     ok: bool
     message: str
+    schema_version: Optional[int] = None
+    schema_ok: Optional[bool] = None
 
 
 class DBTestRequest(BaseModel):

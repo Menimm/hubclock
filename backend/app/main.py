@@ -922,14 +922,14 @@ def export_daily_report(
     wb = Workbook()
     ws = wb.active
     ws.title = "Daily Report"
-    headers = ["Employee", "Start Date", "Start Time", "End Date", "End Time", "Total Hours"]
+    headers = ["Employee", "Start Date", "Start Time", "End Date", "End Time", "Total Hours (HH:MM)"]
     if include_payments:
         headers.append("Estimated Pay")
     ws.append(headers)
 
     for employee in employees_response:
         for shift in employee.shifts:
-            total_hours = round(shift.duration_minutes / 60, 2)
+            total_hours = format_minutes_hhmm(shift.duration_minutes)
             start_date = shift.clock_in.date().isoformat()
             end_date = shift.clock_out.date().isoformat()
             row = [
@@ -978,13 +978,14 @@ def export_summary_report(
     ws = wb.active
     ws.title = "Summary Report"
 
-    headers = ["Employee", "Total Hours"]
+    headers = ["Employee", "Total Hours (HH:MM)"]
     if include_payments:
         headers.extend(["Hourly Rate", "Estimated Pay"])
     ws.append(headers)
 
     for row in rows:
-        line = [row.full_name, row.total_hours]
+        formatted_duration = format_seconds_hhmm(int(row.total_seconds or 0))
+        line = [row.full_name, formatted_duration]
         if include_payments:
             line.extend([float(row.hourly_rate or 0), row.total_pay])
         ws.append(line)
@@ -1276,3 +1277,11 @@ def verify_pin_endpoint(payload: schemas.PinVerifyRequest, db: Session = Depends
 
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+def format_minutes_hhmm(total_minutes: int) -> str:
+    hours, minutes = divmod(max(total_minutes, 0), 60)
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def format_seconds_hhmm(total_seconds: int) -> str:
+    total_minutes = int(round(max(total_seconds, 0) / 60))
+    return format_minutes_hhmm(total_minutes)

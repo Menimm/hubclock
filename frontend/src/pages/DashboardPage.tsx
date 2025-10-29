@@ -57,6 +57,17 @@ interface PinModalConfig {
   onConfirm: (pin: string) => Promise<void>;
 }
 
+const formatMinutesToHHMM = (minutes: number): string => {
+  const safeMinutes = Math.max(0, Math.round(minutes));
+  const hoursPart = Math.floor(safeMinutes / 60);
+  const minutesPart = safeMinutes % 60;
+  return `${hoursPart.toString().padStart(2, "0")}:${minutesPart.toString().padStart(2, "0")}`;
+};
+
+const formatSecondsToHHMM = (seconds: number): string => {
+  return formatMinutesToHHMM(Math.round(seconds / 60));
+};
+
 const DashboardPage: React.FC = () => {
   const { currency, schema_ok } = useSettings();
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -364,7 +375,7 @@ const DashboardPage: React.FC = () => {
                 summaryReport.rows.map((row) => (
                   <tr key={row.employee_id}>
                     <td>{row.full_name}</td>
-                    <td>{row.total_hours.toFixed(2)}</td>
+                    <td>{formatSecondsToHHMM(row.total_seconds)}</td>
                     <td>{currencyFormatter.format(Number(row.hourly_rate ?? 0))}</td>
                     <td>{currencyFormatter.format(row.total_pay)}</td>
                   </tr>
@@ -413,14 +424,14 @@ const DashboardPage: React.FC = () => {
                       <th>תאריך</th>
                       <th>כניסה</th>
                       <th>יציאה</th>
-                      <th>משך (דקות)</th>
+                      <th>משך (HH:MM)</th>
                       <th style={{ minWidth: "160px" }}>פעולות</th>
                     </tr>
                   </thead>
                   <tbody>
                     {employee.shifts.map((shift) => {
                       const isEditing = schema_ok && editingEntryId === shift.entry_id;
-                      let durationPreview: number | string = shift.duration_minutes;
+                      let durationPreview: number | string = formatMinutesToHHMM(shift.duration_minutes);
                       if (isEditing) {
                         if (!editClockIn || !editClockOut) {
                           durationPreview = "-";
@@ -429,7 +440,7 @@ const DashboardPage: React.FC = () => {
                           const endMs = new Date(editClockOut).getTime();
                           durationPreview = Number.isNaN(startMs) || Number.isNaN(endMs)
                             ? "-"
-                            : Math.max(0, Math.round((endMs - startMs) / 60000));
+                            : formatMinutesToHHMM(Math.max(0, Math.round((endMs - startMs) / 60000)));
                         }
                       }
 

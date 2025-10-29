@@ -136,27 +136,6 @@ const EmployeesPage: React.FC = () => {
 
       {status && <div className={`status ${status.kind}`}>{status.message}</div>}
 
-      <section className="card" style={{ background: "#f9fbff" }}>
-        <h3>ייבוא וייצוא נתוני עובדים</h3>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-          <button className="secondary" type="button" onClick={exportEmployees}>
-            ייצוא לקובץ JSON
-          </button>
-          <label className="secondary" style={{ padding: "0.55rem 1.2rem", cursor: "pointer" }}>
-            ייבוא מקובץ JSON
-            <input type="file" accept="application/json" onChange={importEmployees} hidden disabled={isImporting} />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <input
-              type="checkbox"
-              checked={replaceExisting}
-              onChange={(event) => setReplaceExisting(event.target.checked)}
-            />
-            להחליף נתונים קיימים
-          </label>
-        </div>
-      </section>
-
       <section className="card">
         <h3>הוספת עובד חדש</h3>
         <form onSubmit={submitNewEmployee} className="input-row">
@@ -354,6 +333,27 @@ const EmployeesPage: React.FC = () => {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card" style={{ background: "#f9fbff" }}>
+        <h3>ייבוא וייצוא נתוני עובדים</h3>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+          <button className="secondary" type="button" onClick={exportEmployees}>
+            ייצוא לקובץ JSON
+          </button>
+          <label className="secondary" style={{ padding: "0.55rem 1.2rem", cursor: "pointer" }}>
+            ייבוא מקובץ JSON
+            <input type="file" accept="application/json" onChange={importEmployees} hidden disabled={isImporting} />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <input
+              type="checkbox"
+              checked={replaceExisting}
+              onChange={(event) => setReplaceExisting(event.target.checked)}
+            />
+            להחליף נתונים קיימים
+          </label>
+        </div>
       </section>
     </div>
   );

@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from openpyxl import Workbook
 from sqlalchemy import create_engine, delete, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
@@ -26,6 +27,13 @@ from .security import hash_pin, verify_pin
 
 settings = get_settings()
 app = FastAPI(title="HubClock API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 SCHEMA_VERSION = 2
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 logger = logging.getLogger(__name__)

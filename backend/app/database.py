@@ -17,6 +17,7 @@ _PrimarySession: Optional[sessionmaker] = None
 _SecondarySession: Optional[sessionmaker] = None
 _primary_url: Optional[str] = _settings.sqlalchemy_database_uri
 _secondary_url: Optional[str] = None
+_configured: bool = _settings.environment != "development"
 
 
 def _create_engine(url: str) -> Engine:
@@ -29,7 +30,7 @@ def _create_engine(url: str) -> Engine:
 
 
 def configure_engines(primary_url: str, secondary_url: Optional[str] = None) -> Engine:
-    global _primary_engine, _secondary_engine, _PrimarySession, _SecondarySession, _primary_url, _secondary_url
+    global _primary_engine, _secondary_engine, _PrimarySession, _SecondarySession, _primary_url, _secondary_url, _configured
     _primary_url = primary_url
     _secondary_url = secondary_url
 
@@ -49,14 +50,15 @@ def configure_engines(primary_url: str, secondary_url: Optional[str] = None) -> 
         _secondary_engine = None
         _SecondarySession = None
 
+    _configured = True
     return _primary_engine
 
 
 def get_engine() -> Engine:
     global _primary_engine
     if _primary_engine is None:
-        if not _primary_url:
-            raise RuntimeError("Primary database URL is not configured")
+        if not _primary_url or not _configured:
+            raise RuntimeError("Primary database URL is not configured. Please configure it via settings before use.")
         configure_engines(_primary_url, _secondary_url)
     return _primary_engine
 

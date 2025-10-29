@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     mysql_database: str = "hubclock"
     timezone: str = "UTC"
     pin_rounds: int = 12
+    environment: str = "development"
 
     @property
     def sqlalchemy_database_uri(self) -> str:

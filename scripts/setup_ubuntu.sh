@@ -64,11 +64,16 @@ else
 fi
 
 if [[ $INSTALL_MYSQL == true ]]; then
-  apt install -y mysql-server
+  if ! apt install -y mysql-server; then
+    echo "[!] mysql-server package unavailable. Attempting to install default-mysql-server instead." >&2
+    apt install -y default-mysql-server
+  fi
   if systemctl list-unit-files | grep -q "^mysql.service"; then
     systemctl enable --now mysql
+  elif systemctl list-unit-files | grep -q "^mariadb.service"; then
+    systemctl enable --now mariadb
   else
-    echo "[!] Unable to locate mysql.service after installation. Please start MySQL manually." >&2
+    echo "[!] Unable to locate mysql.service or mariadb.service after installation. Please start MySQL manually." >&2
   fi
 else
   echo "[i] Skipping MySQL installation. Ensure an accessible MySQL instance is available."

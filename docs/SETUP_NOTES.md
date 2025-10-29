@@ -9,6 +9,7 @@
 - Provisioning script: `sudo ./scripts/setup_ubuntu.sh`
 - `scripts/setup_backend.sh` / `scripts/setup_frontend.sh` can optionally launch their respective dev servers (backgrounded with logs in `.run/`) once configuration completes.
 - `scripts/setup_ubuntu.sh` can start both services and immediately probe `/auth/verify-pin` via `curl` to confirm connectivity.
+- Production/dev units can be removed with `sudo ./scripts/install_services.sh --remove-production` or `--remove-development`.
 - Install systemd units:
   - Development (backend + Vite dev server): `sudo ./scripts/install_services.sh --dev`
   - Production (backend serving built frontend): `sudo ./scripts/install_services.sh --production`
@@ -24,6 +25,7 @@
 - Ensure schema with `curl -X POST http://127.0.0.1:8000/db/init`.
 - Containers without full systemd permissions can launch MySQL directly as root with `sudo ./scripts/manage_mysql_root.sh start` (logs in `/var/log/mysqld-root.log`).
 - Setup helpers detect the server's IPv4 addresses and suggest them as defaults for `UVICORN_HOST`, `VITE_DEV_HOST`, and `VITE_API_BASE_URL` to simplify remote access.
+- Choose the Nginx option in `scripts/setup_ubuntu.sh` to install a reverse proxy (you can set the public port during the prompt); the script creates `/etc/nginx/sites-available/hubclock.conf` and can switch to the production backend service so the entire app is reachable via `http://<host>:<port>/`.
 
 ## Default Settings
 - Currency: `ILS`

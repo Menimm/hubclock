@@ -110,6 +110,13 @@ sudo ./scripts/install_services.sh --dev
 ./scripts/manage_dev_services.sh start   # uses systemd when available, otherwise background jobs
 ```
 
+To remove systemd units later, use:
+
+```bash
+sudo ./scripts/install_services.sh --remove-development
+sudo ./scripts/install_services.sh --remove-production
+```
+
 Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. When systemd isn’t available (e.g., minimal containers), the management script falls back to background processes spawned from `scripts/start_backend.sh` / `scripts/start_frontend.sh`. Frontend listens on the `VITE_DEV_HOST:VITE_DEV_PORT` values (defaults 127.0.0.1:5173) and the backend on `UVICORN_HOST:UVICORN_PORT` (defaults 0.0.0.0:8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
 
 To install the development services (backend w/ auto-reload + Vite dev server), run:
@@ -139,6 +146,10 @@ sudo ./scripts/manage_mysql_root.sh start
 ```
 
 Logs live in `/var/log/mysqld-root.log`; stop/status are available via the same helper.
+
+### Serve Everything on Port 80
+
+Run the Ubuntu setup script with the Nginx option (`Install and configure Nginx reverse proxy on port 80? -> y`). The helper installs Nginx, lets you choose the public listen port, writes `/etc/nginx/sites-available/hubclock.conf`, proxies traffic to the backend, and can switch you to the production backend service (which serves the built frontend from `frontend/dist`). After choosing the production option you only need the selected port exposed—Nginx forwards API and static requests to the backend on port 8000.
 
 ### Production Update Procedure
 

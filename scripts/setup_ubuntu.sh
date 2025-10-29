@@ -283,6 +283,60 @@ if [[ ${TEST_PIN:-N} =~ ^[Yy]$ ]]; then
   rm -f "$tmp_response"
 fi
 
+INSTALL_NGINX=false
+read -rp "Install and configure Nginx reverse proxy on port 80? [y/N] " INSTALL_NGINX_CHOICE
+if [[ ${INSTALL_NGINX_CHOICE:-N} =~ ^[Yy]$ ]]; then
+  INSTALL_NGINX=true
+  apt install -y nginx
+
+  server_name_default=$(hostname -f 2>/dev/null || echo "_")
+  read -rp "Hostname for Nginx server_name [$server_name_default]: " nginx_server_name
+  nginx_server_name=${nginx_server_name:-$server_name_default}
+
+  nginx_listen_default=80
+  read -rp "Public port Nginx should listen on [$nginx_listen_default]: " nginx_listen
+  nginx_listen=${nginx_listen:-$nginx_listen_default}
+
+  nginx_conf_path=/etc/nginx/sites-available/hubclock.conf
+  cat >"$nginx_conf_path" <<NGINX_CONF
+server {
+    listen ${nginx_listen};
+    server_name ${nginx_server_name};
+
+    client_max_body_size 16m;
+
+    location / {
+        proxy_pass http://127.0.0.1:${backend_port}/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_redirect off;
+    }
+}
+NGINX_CONF
+
+  ln -sf "$nginx_conf_path" /etc/nginx/sites-enabled/hubclock.conf
+  if [[ -f /etc/nginx/sites-enabled/default ]]; then
+    rm -f /etc/nginx/sites-enabled/default
+  fi
+  systemctl reload nginx
+  echo "[i] Nginx configured. Requests to http://${nginx_server_name}:80 proxy to backend on ${backend_port}."
+
+  read -rp "Switch to production backend service (serves frontend/dist) behind Nginx? [y/N] " ENABLE_PROD
+  if [[ ${ENABLE_PROD:-N} =~ ^[Yy]$ ]]; then
+    if [[ $services_started == true ]]; then
+      set +e
+      "$PROJECT_ROOT/scripts/manage_dev_services.sh" stop
+      set -e
+      services_started=false
+    fi
+    "$PROJECT_ROOT/scripts/install_services.sh" --production
+    systemctl restart hubclock-backend.service
+    echo "[i] Production backend is running. Access the app via http://${nginx_server_name}:${nginx_listen}/"
+  fi
+fi
+
 cat <<INSTRUCTIONS
 HubClock setup complete.
 

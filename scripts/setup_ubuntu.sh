@@ -8,6 +8,9 @@ fi
 
 PROJECT_ROOT=$(cd "$(dirname "$0")"/.. && pwd)
 APP_USER=${SUDO_USER:-$(whoami)}
+if [[ $APP_USER == "root" ]]; then
+  echo "[i] Running as root: backend and frontend services will run as root (container-friendly)." >&2
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 

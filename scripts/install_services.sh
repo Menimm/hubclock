@@ -33,6 +33,9 @@ fi
 
 PROJECT_ROOT=$(cd "$(dirname "$0")"/.. && pwd)
 APP_USER=${SUDO_USER:-$(whoami)}
+if [[ $APP_USER == "root" ]]; then
+  echo "[i] Installing services to run as root." >&2
+fi
 SERVICE_DIR=/etc/systemd/system
 
 render_service() {

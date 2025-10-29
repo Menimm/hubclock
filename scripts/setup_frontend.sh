@@ -11,6 +11,26 @@ mkdir -p "$RUN_DIR"
 
 npm_config_cache="$CACHE_DIR" npm install
 
+detect_ipv4_candidates() {
+  local -a addrs=()
+  if command -v ip >/dev/null 2>&1; then
+    while IFS= read -r addr; do
+      [[ -n "$addr" ]] && addrs+=("$addr")
+    done < <(ip -o -4 addr show scope global up | awk '{print $4}' | cut -d/ -f1)
+  fi
+  if [[ ${#addrs[@]} -eq 0 ]] && command -v hostname >/dev/null 2>&1; then
+    for addr in $(hostname -I 2>/dev/null); do
+      [[ -n "$addr" && "$addr" != "127.0.0.1" ]] && addrs+=("$addr")
+    done
+  fi
+  printf '%s\n' "${addrs[@]}"
+}
+
+mapfile -t IPV4_CANDIDATES < <(detect_ipv4_candidates)
+if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+  echo "[i] Detected IPv4 addresses on this host: ${IPV4_CANDIDATES[*]}"
+fi
+
 ENV_FILE="$PROJECT_ROOT/frontend/.env"
 ENV_TEMPLATE="$PROJECT_ROOT/frontend/.env.example"
 
@@ -55,14 +75,23 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[i] Created frontend/.env from template."
 fi
 
+default_port=$(get_env_value "VITE_DEV_PORT" "$ENV_FILE")
+default_port=${default_port:-5173}
+
 default_api=$(get_env_value "VITE_API_BASE_URL" "$ENV_FILE")
-default_api=${default_api:-http://127.0.0.1:8000}
+if [[ -z "$default_api" || "$default_api" == http://127.0.0.1:8000 ]]; then
+  if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+    default_api="http://${IPV4_CANDIDATES[0]}:8000"
+  else
+    default_api="http://127.0.0.1:8000"
+  fi
+fi
+echo "[?] Which URL should the browser use for API calls (VITE_API_BASE_URL)?"
+echo "    Use http://<this-machine-ip>:<backend-port> when the frontend is accessed remotely."
 read -rp "Backend API base URL [$default_api]: " api_base
 api_base=${api_base:-$default_api}
 set_env_value "$ENV_FILE" "VITE_API_BASE_URL" "$api_base"
 
-default_port=$(get_env_value "VITE_DEV_PORT" "$ENV_FILE")
-default_port=${default_port:-5173}
 read -rp "Frontend dev server port [$default_port]: " dev_port
 dev_port=${dev_port:-$default_port}
 set_env_value "$ENV_FILE" "VITE_DEV_PORT" "$dev_port"

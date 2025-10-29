@@ -6,6 +6,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 MODE="dev"
+ACTION="install"
 if [[ $# -gt 0 ]]; then
   case "$1" in
     --prod|--production)
@@ -14,13 +15,21 @@ if [[ $# -gt 0 ]]; then
     --dev|--development)
       MODE="dev"
       ;;
+    --remove-prod|--remove-production)
+      ACTION="remove_prod"
+      ;;
+    --remove-dev|--remove-development)
+      ACTION="remove_dev"
+      ;;
     --help|-h)
       cat <<USAGE
-Usage: sudo ./scripts/install_services.sh [--production|--dev]
+Usage: sudo ./scripts/install_services.sh [--production|--dev|--remove-production|--remove-development]
 
 Options:
-  --production   Install production unit(s) (backend only, serves built frontend assets)
-  --dev          Install development units (backend + Vite dev server)
+  --production         Install production unit(s) (backend only, serves built frontend assets)
+  --dev                Install development units (backend + Vite dev server)
+  --remove-production  Stop, disable, and remove production service(s)
+  --remove-development Stop, disable, and remove development service(s)
 USAGE
       exit 0
       ;;
@@ -55,6 +64,29 @@ install_frontend_service() {
   render_service "$template" /tmp/hubclock-frontend.service
   mv /tmp/hubclock-frontend.service "$SERVICE_DIR/hubclock-frontend.service"
 }
+
+remove_service() {
+  local unit=$1
+  if systemctl list-unit-files | grep -q "^${unit}.service"; then
+    systemctl stop "${unit}.service" || true
+    systemctl disable "${unit}.service" || true
+    rm -f "$SERVICE_DIR/${unit}.service"
+    echo "[i] Removed ${unit}.service"
+  fi
+}
+
+if [[ $ACTION == "remove_prod" ]]; then
+  remove_service "hubclock-backend"
+  systemctl daemon-reload
+  echo "[i] Production services removed."
+  exit 0
+elif [[ $ACTION == "remove_dev" ]]; then
+  remove_service "hubclock-frontend"
+  remove_service "hubclock-backend"
+  systemctl daemon-reload
+  echo "[i] Development services removed."
+  exit 0
+fi
 
 if [[ $MODE == "prod" ]]; then
   echo "[i] Preparing production deployment"

@@ -24,13 +24,14 @@ HubClock is a small-footprint time tracking kiosk for a five-employee deli. It i
    ```
 
 2. **Configure environment**
+   The setup scripts copy the `.env` templates (if missing) and prompt for backend host/port and the frontend API base URL/port. To pre-populate or adjust manually:
    ```bash
    cp backend/.env.example backend/.env
    cp frontend/.env.example frontend/.env
    # edit credentials when needed
    ```
 
-3. **Bootstrap dependencies (scripted)**
+3. **Bootstrap dependencies (scripted prompts included)**
    ```bash
    make backend-setup
    make frontend-setup
@@ -85,7 +86,8 @@ scripts/
 - PIN protects all routes except the public clock page. Set it in **Settings** before first use.
 - Use MySQL’s timezone-aware configuration (`DEFAULT_TIME_ZONE='+00:00'`) to avoid DST surprises.
 - Run reports regularly and export data by copying table results if payroll needs archival outside the app.
-- The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. Leave it as `/api` when using an HTTP proxy, or point it to the backend origin such as `http://127.0.0.1:8000` for direct access.
+- The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. By default it points to `http://127.0.0.1:8000`; set it to `/api` if you proxy requests through a web server.
+- `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`.
 
 ## Deployment (Ubuntu)
 
@@ -96,4 +98,4 @@ sudo systemctl start hubclock-backend.service
 sudo systemctl start hubclock-frontend.service
 ```
 
-Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. Frontend listens on port 5173, backend on 8000. Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
+Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. Frontend listens on the `VITE_DEV_PORT` value (default 5173) and the backend on `UVICORN_PORT` (default 8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.

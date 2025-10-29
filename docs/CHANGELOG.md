@@ -12,6 +12,7 @@
 - Documentation: `docs/SETUP_NOTES.md` summarises environment setup for future runs.
 - Excel export endpoints (`GET /reports/daily/export` and `/reports/export`) עם אפשרות לכלול חישובי שכר.
 - ייבוא/ייצוא נתוני עובדים ומשמרות (`GET /employees/export`, `POST /employees/import`) לתמיכה בשחזור מסד הנתונים.
+- סקריפטי ההתקנה שואלים באופן אינטראקטיבי על כתובת/פורט של הבקאנד וכתובת ה-API בפרונטאנד ומעדכנים את קבצי ה-`.env`.
 
 ### Fixed
 - Clock-in error state now clears after successful entry, preventing persistent "employee not found" alerts.

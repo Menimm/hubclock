@@ -1357,8 +1357,8 @@ def import_settings(payload: schemas.SettingsImport):
 
 
 @app.post("/auth/verify-pin", response_model=schemas.PinVerifyResponse)
-def verify_pin_endpoint(payload: schemas.PinVerifyRequest, db: Session = Depends(get_db)):
-    setting = db.scalar(select(Setting))
+def verify_pin_endpoint(payload: schemas.PinVerifyRequest):
+    setting = _load_setting()
     if not setting or not setting.pin_hash:
         raise HTTPException(status_code=404, detail="לא הוגדר קוד PIN")
     if not verify_pin(payload.pin, setting.pin_hash):

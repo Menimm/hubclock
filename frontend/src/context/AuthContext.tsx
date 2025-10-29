@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { api, formatApiError } from "../api/client";
+import { useSettings } from "./SettingsContext";
 
 type AuthContextValue = {
   isUnlocked: boolean;
@@ -11,6 +12,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const { pin_set } = useSettings();
 
   const unlock = useCallback(async (pin: string) => {
     try {
@@ -23,6 +25,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const lock = useCallback(() => setIsUnlocked(false), []);
+
+  useEffect(() => {
+    if (!pin_set) {
+      setIsUnlocked(true);
+    } else {
+      setIsUnlocked(false);
+    }
+  }, [pin_set]);
 
   return <AuthContext.Provider value={{ isUnlocked, unlock, lock }}>{children}</AuthContext.Provider>;
 };

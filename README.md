@@ -88,9 +88,11 @@ scripts/
 - Use MySQL’s timezone-aware configuration (`DEFAULT_TIME_ZONE='+00:00'`) to avoid DST surprises.
 - Run reports regularly and export data by copying table results if payroll needs archival outside the app.
 - The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. By default it points to `http://127.0.0.1:8000`; set it to `/api` if you proxy requests through a web server.
-- `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`.
+- `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`. If you change it, reinstall the dev services (`sudo ./scripts/install_services.sh --dev`) or pass the port manually when running `npm run dev` from `frontend/`.
+- When running the Vite dev server manually, invoke it from the `frontend/` folder (e.g. `npm run dev -- --host 0.0.0.0 --port 5173`) or use `npm --prefix frontend run dev …` from the repo root.
 - Use **Settings → מסדי נתונים** לבדיקת חיבור לכל יעד (`בדיקת חיבור ראשי/משני`) ולהגדרת היעד עבור יצירת סכימה (`מסדי נתונים פעילים`, `ראשי`, `משני`, או `שני המסדים`).
 - אם מתקבלת התרעה על גרסת סכימה מיושנת, הריצו את "יצירת/עדכון סכימה" (בטאב ההגדרות) כך שהסכמה תעודכן ויכולות חדשות כמו עריכת משמרות יפעלו.
+- במצב פיתוח, השירותים יעלו גם ללא מסד נתונים מקומי — הגדירו חיבור למסד מרוחק דרך מסך ההגדרות ולאחר מכן הפעילו בדיקת חיבור/עדכון סכימה.
 
 ## Deployment (Ubuntu)
 

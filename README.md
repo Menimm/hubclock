@@ -119,6 +119,12 @@ sudo ./scripts/install_services.sh --production
 
 The production option builds `frontend/dist`, installs `hubclock-backend.service` with multiple uvicorn workers, and disables the Vite dev service.
 
+For quick management of the dev services, use:
+
+```bash
+./scripts/manage_dev_services.sh start|stop|restart|status
+```
+
 ## Docker
 
 Build an all-in-one image (FastAPI backend + compiled frontend) with:

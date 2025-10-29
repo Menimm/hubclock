@@ -7,6 +7,7 @@
 - Install systemd units:
   - Development (backend + Vite dev server): `sudo ./scripts/install_services.sh --dev`
   - Production (backend only, serves built frontend): `sudo ./scripts/install_services.sh --production`
+  - Dev helper script: `./scripts/manage_dev_services.sh start|stop|restart|status`
 - Docker image builder: `./scripts/build_docker.sh [tag]`
 - `scripts/setup_backend.sh` creates/updates `backend/.env` and interactively captures `UVICORN_HOST` and `UVICORN_PORT`.
 - `scripts/setup_frontend.sh` creates/updates `frontend/.env` and prompts for `VITE_API_BASE_URL` and `VITE_DEV_PORT`.

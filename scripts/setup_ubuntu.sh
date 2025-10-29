@@ -12,6 +12,26 @@ if [[ $APP_USER == "root" ]]; then
   echo "[i] Running as root: backend and frontend services will run as root (container-friendly)." >&2
 fi
 
+detect_ipv4_candidates() {
+  local -a addrs=()
+  if command -v ip >/dev/null 2>&1; then
+    while IFS= read -r addr; do
+      [[ -n "$addr" ]] && addrs+=("$addr")
+    done < <(ip -o -4 addr show scope global up | awk '{print $4}' | cut -d/ -f1)
+  fi
+  if [[ ${#addrs[@]} -eq 0 ]] && command -v hostname >/dev/null 2>&1; then
+    for addr in $(hostname -I 2>/dev/null); do
+      [[ -n "$addr" && "$addr" != "127.0.0.1" ]] && addrs+=("$addr")
+    done
+  fi
+  printf '%s\n' "${addrs[@]}"
+}
+
+mapfile -t IPV4_CANDIDATES < <(detect_ipv4_candidates)
+if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+  echo "[i] Detected IPv4 addresses: ${IPV4_CANDIDATES[*]}"
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 get_env_value() {
@@ -143,7 +163,13 @@ if [[ ! -f "$FRONTEND_ENV" ]]; then
 fi
 
 backend_host_default=$(get_env_value "UVICORN_HOST" "$BACKEND_ENV")
-backend_host_default=${backend_host_default:-127.0.0.1}
+if [[ -z "$backend_host_default" || "$backend_host_default" == "127.0.0.1" ]]; then
+  if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+    backend_host_default=${IPV4_CANDIDATES[0]}
+  else
+    backend_host_default=127.0.0.1
+  fi
+fi
 read -rp "Backend bind host [$backend_host_default]: " backend_host
 backend_host=${backend_host:-$backend_host_default}
 set_env_value "$BACKEND_ENV" "UVICORN_HOST" "$backend_host"
@@ -155,13 +181,25 @@ backend_port=${backend_port:-$backend_port_default}
 set_env_value "$BACKEND_ENV" "UVICORN_PORT" "$backend_port"
 
 frontend_api_default=$(get_env_value "VITE_API_BASE_URL" "$FRONTEND_ENV")
-frontend_api_default=${frontend_api_default:-http://127.0.0.1:8000}
+if [[ -z "$frontend_api_default" || "$frontend_api_default" == http://127.0.0.1:8000 ]]; then
+  if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+    frontend_api_default="http://${IPV4_CANDIDATES[0]}:$backend_port"
+  else
+    frontend_api_default="http://127.0.0.1:$backend_port"
+  fi
+fi
 read -rp "Backend API base URL for the frontend [$frontend_api_default]: " frontend_api
 frontend_api=${frontend_api:-$frontend_api_default}
 set_env_value "$FRONTEND_ENV" "VITE_API_BASE_URL" "$frontend_api"
 
 frontend_host_default=$(get_env_value "VITE_DEV_HOST" "$FRONTEND_ENV")
-frontend_host_default=${frontend_host_default:-127.0.0.1}
+if [[ -z "$frontend_host_default" || "$frontend_host_default" == 127.0.0.1 ]]; then
+  if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+    frontend_host_default=${IPV4_CANDIDATES[0]}
+  else
+    frontend_host_default=127.0.0.1
+  fi
+fi
 read -rp "Frontend dev server host [$frontend_host_default]: " frontend_host
 frontend_host=${frontend_host:-$frontend_host_default}
 set_env_value "$FRONTEND_ENV" "VITE_DEV_HOST" "$frontend_host"

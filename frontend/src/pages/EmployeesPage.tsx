@@ -83,7 +83,7 @@ const EmployeesPage: React.FC = () => {
         clock_out: new Date(manualEntry.clock_out).toISOString(),
         manual: true
       });
-      setManualEntry({ employee_id: 0, clock_in: "", clock_out: "" });
+      setManualEntry((prev) => ({ ...prev, clock_in: "", clock_out: "" }));
       setStatus({ kind: "success", message: "המשמרת הידנית נשמרה" });
     } catch (error) {
       setStatus({ kind: "error", message: formatApiError(error) });
@@ -314,7 +314,14 @@ const EmployeesPage: React.FC = () => {
             <input
               type="datetime-local"
               value={manualEntry.clock_in}
-              onChange={(event) => setManualEntry((prev) => ({ ...prev, clock_in: event.target.value }))}
+              onChange={(event) => {
+                const value = event.target.value;
+                setManualEntry((prev) => ({
+                  ...prev,
+                  clock_in: value,
+                  clock_out: prev.clock_out || value
+                }));
+              }}
               required
             />
           </div>

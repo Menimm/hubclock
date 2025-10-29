@@ -321,7 +321,7 @@ NGINX_CONF
     rm -f /etc/nginx/sites-enabled/default
   fi
   systemctl reload nginx
-  echo "[i] Nginx configured. Requests to http://${nginx_server_name}:80 proxy to backend on ${backend_port}."
+  echo "[i] Nginx configured. Requests to http://${nginx_server_name}:${nginx_listen} proxy to backend on ${backend_port}."
 
   read -rp "Switch to production backend service (serves frontend/dist) behind Nginx? [y/N] " ENABLE_PROD
   if [[ ${ENABLE_PROD:-N} =~ ^[Yy]$ ]]; then
@@ -334,6 +334,14 @@ NGINX_CONF
     "$PROJECT_ROOT/scripts/install_services.sh" --production
     systemctl restart hubclock-backend.service
     echo "[i] Production backend is running. Access the app via http://${nginx_server_name}:${nginx_listen}/"
+  fi
+
+  read -rp "Request Let's Encrypt SSL certificates with certbot now? [y/N] " ENABLE_CERTBOT
+  if [[ ${ENABLE_CERTBOT:-N} =~ ^[Yy]$ ]]; then
+    apt install -y certbot python3-certbot-nginx
+    echo "[i] Certbot will reconfigure Nginx for HTTPS. Ensure DNS for ${nginx_server_name} points to this server."
+    certbot --nginx -d "$nginx_server_name"
+    echo "[i] Certbot finished. Certificates stored under /etc/letsencrypt/live/${nginx_server_name}/"
   fi
 fi
 

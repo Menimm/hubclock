@@ -344,19 +344,12 @@ useEffect(() => {
       <section className="card">
         <h3>חיבור למסדי נתונים</h3>
         <form onSubmit={updateDatabase}>
-          <div
-            style={{
-              display: "grid",
-              gap: "1rem",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))"
-            }}
-          >
-            <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}>
-              <legend style={{ fontWeight: 600 }}>מסד נתונים א'</legend>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                <input type="checkbox" checked={primaryActive} onChange={handlePrimaryActiveChange} /> פעיל
-              </label>
-              <label htmlFor="primaryHost">כתובת שרת</label>
+          <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem", marginBottom: "1rem" }}>
+            <legend style={{ fontWeight: 600 }}>מסד נתונים א'</legend>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+              <input type="checkbox" checked={primaryActive} onChange={handlePrimaryActiveChange} /> פעיל
+            </label>
+            <label htmlFor="primaryHost">כתובת שרת</label>
               <input
                 id="primaryHost"
                 value={primaryHost}
@@ -404,64 +397,62 @@ useEffect(() => {
                 </button>
               </div>
             </fieldset>
-
-            <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}>
-              <legend style={{ fontWeight: 600 }}>מסד נתונים ב'</legend>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                <input type="checkbox" checked={secondaryActive} onChange={handleSecondaryActiveChange} /> פעיל
-              </label>
-              <label htmlFor="secondaryHost">כתובת שרת</label>
+          <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}>
+            <legend style={{ fontWeight: 600 }}>מסד נתונים ב'</legend>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+              <input type="checkbox" checked={secondaryActive} onChange={handleSecondaryActiveChange} /> פעיל
+            </label>
+            <label htmlFor="secondaryHost">כתובת שרת</label>
+            <input
+              id="secondaryHost"
+              value={secondaryHost}
+              onChange={(event) => setSecondaryHost(event.target.value)}
+            />
+            <label htmlFor="secondaryPort">פורט</label>
+            <input
+              id="secondaryPort"
+              type="number"
+              value={secondaryPort}
+              onChange={(event) => setSecondaryPort(event.target.value)}
+              min={0}
+            />
+            <label htmlFor="secondaryUser">שם משתמש</label>
+            <input
+              id="secondaryUser"
+              value={secondaryUser}
+              onChange={(event) => setSecondaryUser(event.target.value)}
+            />
+            <label htmlFor="secondaryPassword">סיסמה</label>
+            <div style={{ position: "relative" }}>
               <input
-                id="secondaryHost"
-                value={secondaryHost}
-                onChange={(event) => setSecondaryHost(event.target.value)}
+                id="secondaryPassword"
+                type={showSecondaryPassword ? "text" : "password"}
+                value={secondaryPassword}
+                onChange={(event) => setSecondaryPassword(event.target.value)}
+                style={{ paddingLeft: "3.2rem" }}
               />
-              <label htmlFor="secondaryPort">פורט</label>
-              <input
-                id="secondaryPort"
-                type="number"
-                value={secondaryPort}
-                onChange={(event) => setSecondaryPort(event.target.value)}
-                min={0}
-              />
-              <label htmlFor="secondaryUser">שם משתמש</label>
-              <input
-                id="secondaryUser"
-                value={secondaryUser}
-                onChange={(event) => setSecondaryUser(event.target.value)}
-              />
-              <label htmlFor="secondaryPassword">סיסמה</label>
-              <div style={{ position: "relative" }}>
-                <input
-                  id="secondaryPassword"
-                  type={showSecondaryPassword ? "text" : "password"}
-                  value={secondaryPassword}
-                  onChange={(event) => setSecondaryPassword(event.target.value)}
-                  style={{ paddingLeft: "3.2rem" }}
-                />
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setShowSecondaryPassword((prev) => !prev)}
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "0.4rem",
-                    transform: "translateY(-50%)",
-                    padding: "0.25rem 0.6rem",
-                    fontSize: "0.8rem"
-                  }}
-                >
-                  {showSecondaryPassword ? "הסתר" : "הצג"}
-                </button>
-              </div>
-            </fieldset>
-          </div>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowSecondaryPassword((prev) => !prev)}
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "0.4rem",
+                  transform: "translateY(-50%)",
+                  padding: "0.25rem 0.6rem",
+                  fontSize: "0.8rem"
+                }}
+              >
+                {showSecondaryPassword ? "הסתר" : "הצג"}
+              </button>
+            </div>
+          </fieldset>
 
           <div style={{ marginTop: "1.25rem" }}>
             <label style={{ fontWeight: 600, display: "block", marginBottom: "0.5rem" }}>בחירת מסד נתונים ראשי</label>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                 <input
                   type="radio"
                   name="primaryChoice"
@@ -470,9 +461,9 @@ useEffect(() => {
                   onChange={(event) => setPrimaryChoice(event.target.value as "primary" | "secondary")}
                   disabled={!primaryActive}
                 />
-                מסד נתונים א'
+                <span>מסד נתונים א' (קריאה וכתיבה)</span>
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                 <input
                   type="radio"
                   name="primaryChoice"
@@ -481,7 +472,7 @@ useEffect(() => {
                   onChange={(event) => setPrimaryChoice(event.target.value as "primary" | "secondary")}
                   disabled={!secondaryActive}
                 />
-                מסד נתונים ב'
+                <span>מסד נתונים ב' (קריאה וכתיבה)</span>
               </label>
             </div>
           </div>

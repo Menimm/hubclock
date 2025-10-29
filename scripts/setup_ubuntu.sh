@@ -68,10 +68,28 @@ if [[ $INSTALL_MYSQL == true ]]; then
     echo "[!] mysql-server package unavailable. Attempting to install default-mysql-server instead." >&2
     apt install -y default-mysql-server
   fi
+  start_service() {
+    local svc=$1
+    if command -v systemctl >/dev/null 2>&1; then
+      if systemctl list-unit-files | grep -q "^${svc}.service"; then
+        if ! systemctl enable --now "$svc"; then
+          echo "[!] systemctl failed to start ${svc}. Attempting with 'service'." >&2
+          service "$svc" start || echo "[!] Please start ${svc} manually." >&2
+        fi
+        return
+      fi
+    fi
+    if command -v service >/dev/null 2>&1; then
+      service "$svc" start || echo "[!] Please start ${svc} manually." >&2
+    else
+      echo "[!] Unable to control ${svc} (systemctl/service unavailable). Start it manually." >&2
+    fi
+  }
+
   if systemctl list-unit-files | grep -q "^mysql.service"; then
-    systemctl enable --now mysql
+    start_service mysql
   elif systemctl list-unit-files | grep -q "^mariadb.service"; then
-    systemctl enable --now mariadb
+    start_service mariadb
   else
     echo "[!] Unable to locate mysql.service or mariadb.service after installation. Please start MySQL manually." >&2
   fi

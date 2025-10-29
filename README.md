@@ -54,7 +54,8 @@ HubClock is a small-footprint time tracking kiosk for a five-employee deli. It i
 - **Clock In/Out**: ממשק בעברית מותאם למובייל עם כפתור יחיד שמזהה אוטומטית אם העובד נכנס או יצא, ורשימת משמרות שמתעדכנת בזמן אמת.
 - **Employees**: ניהול עובדים מלא כולל עדכון שכר שעתי, מצב פעיל/לא פעיל, הזנת משמרות ידניות וייצוא/ייבוא JSON לגיבוי ושחזור.
 - **Dashboard**: דוחות סיכום חודשיים או טווח מותאם לצד יומן יומי המציג לכל עובד את התאריכים ושעות העבודה, כולל חישוב שכר משוער במטבע הנבחר וייצוא לאקסל (בחירה האם לכלול רכיבי שכר).
-- **Settings**: בחירת מטבע (ברירת מחדל ‎ILS‎) וצבע נושא, קביעת שם העסק המופיע בכותרות, ניהול פרטי חיבור למסד נתונים, קוד PIN מנהל, בדיקות קשר למסד, וייצוא/ייבוא מלא של ההגדרות—all מהדפדפן.
+- **Redundant Storage**: כתובות חיבור לשני מסדי נתונים MySQL (ראשי ומשני) עם סימון פעילות, בחירת המסד הראשי לקריאה, וסנכרון אוטומטי של כל הנתונים לכל מסד פעיל.
+- **Settings**: בחירת מטבע (ברירת מחדל ‎ILS‎) וצבע נושא, קביעת שם העסק המופיע בכותרות, הגדרת מסדי הנתונים הפעילים (כולל בדיקת חיבור/יצירת סכימה לכל יעד), קוד PIN מנהל, וייצוא/ייבוא מלא של ההגדרות—all מהדפדפן.
 
 ## File Layout
 
@@ -88,6 +89,7 @@ scripts/
 - Run reports regularly and export data by copying table results if payroll needs archival outside the app.
 - The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. By default it points to `http://127.0.0.1:8000`; set it to `/api` if you proxy requests through a web server.
 - `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`.
+- Use **Settings → מסדי נתונים** לבדיקת חיבור לכל יעד (`בדיקת חיבור ראשי/משני`) ולהגדרת היעד עבור יצירת סכימה (`מסדי נתונים פעילים`, `ראשי`, `משני`, או `שני המסדים`).
 
 ## Deployment (Ubuntu)
 
@@ -99,3 +101,25 @@ sudo systemctl start hubclock-frontend.service
 ```
 
 Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. Frontend listens on the `VITE_DEV_PORT` value (default 5173) and the backend on `UVICORN_PORT` (default 8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
+
+## Docker
+
+Build an all-in-one image (FastAPI backend + compiled frontend) with:
+
+```bash
+./scripts/build_docker.sh hubclock:latest
+```
+
+Run the container while pointing it to an accessible MySQL instance:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e MYSQL_HOST=your-mysql-host \
+  -e MYSQL_PORT=3306 \
+  -e MYSQL_USER=hubclock \
+  -e MYSQL_PASSWORD=hubclock \
+  -e MYSQL_DATABASE=hubclock \
+  hubclock:latest
+```
+
+The backend serves the compiled frontend from `/`, so visiting `http://localhost:8000` loads the UI directly.

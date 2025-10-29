@@ -3,6 +3,7 @@ import { api, formatApiError } from "../api/client";
 import { useSettings } from "../context/SettingsContext";
 
 type StatusMessage = { kind: "success" | "error"; message: string } | null;
+type SchemaTarget = "active" | "primary" | "secondary" | "both";
 
 const currencyOptions = [
   { value: "ILS", label: "שקל חדש (ILS)" },
@@ -19,16 +20,30 @@ const SettingsPage: React.FC = () => {
     db_port,
     db_user,
     db_password,
+    secondary_db_host,
+    secondary_db_port,
+    secondary_db_user,
+    secondary_db_password,
+    primary_db_active,
+    secondary_db_active,
+    primary_database,
     brand_name,
     theme_color: themeColorSetting,
     refresh,
     setLocal
   } = useSettings();
   const [currencyValue, setCurrencyValue] = useState(currency);
-  const [host, setHost] = useState(db_host);
-  const [port, setPort] = useState(db_port ? String(db_port) : "");
-  const [user, setUser] = useState(db_user);
-  const [password, setPassword] = useState(db_password);
+  const [primaryHost, setPrimaryHost] = useState(db_host ?? "");
+  const [primaryPort, setPrimaryPort] = useState(db_port ? String(db_port) : "");
+  const [primaryUser, setPrimaryUser] = useState(db_user ?? "");
+  const [primaryPassword, setPrimaryPassword] = useState(db_password ?? "");
+  const [primaryActive, setPrimaryActive] = useState<boolean>(primary_db_active ?? true);
+  const [secondaryHost, setSecondaryHost] = useState(secondary_db_host ?? "");
+  const [secondaryPort, setSecondaryPort] = useState(secondary_db_port ? String(secondary_db_port) : "");
+  const [secondaryUser, setSecondaryUser] = useState(secondary_db_user ?? "");
+  const [secondaryPassword, setSecondaryPassword] = useState(secondary_db_password ?? "");
+  const [secondaryActive, setSecondaryActive] = useState<boolean>(secondary_db_active ?? false);
+  const [primaryChoice, setPrimaryChoice] = useState<"primary" | "secondary">(primary_database ?? "primary");
   const [brandName, setBrandName] = useState(brand_name ?? "דלי");
   const [themeColor, setThemeColor] = useState(themeColorSetting ?? "#1b3aa6");
   const [currentPin, setCurrentPin] = useState("");
@@ -38,20 +53,43 @@ const SettingsPage: React.FC = () => {
   const [pinStatus, setPinStatus] = useState<StatusMessage>(null);
   const [importStatus, setImportStatus] = useState<StatusMessage>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [showDbPassword, setShowDbPassword] = useState(false);
+  const [showPrimaryPassword, setShowPrimaryPassword] = useState(false);
+  const [showSecondaryPassword, setShowSecondaryPassword] = useState(false);
+  const [schemaTarget, setSchemaTarget] = useState<SchemaTarget>("active");
 
-  useEffect(() => {
+useEffect(() => {
     setCurrencyValue(currency);
   }, [currency]);
 
-useEffect(() => {
-  setHost(db_host ?? "");
-  setPort(db_port ? String(db_port) : "");
-  setUser(db_user ?? "");
-  setPassword(db_password ?? "");
-  setBrandName(brand_name ?? "דלי");
-  setThemeColor(themeColorSetting ?? "#1b3aa6");
-}, [db_host, db_port, db_user, db_password, brand_name, themeColorSetting]);
+  useEffect(() => {
+    setPrimaryHost(db_host ?? "");
+    setPrimaryPort(db_port ? String(db_port) : "");
+    setPrimaryUser(db_user ?? "");
+    setPrimaryPassword(db_password ?? "");
+    setPrimaryActive(primary_db_active ?? true);
+    setSecondaryHost(secondary_db_host ?? "");
+    setSecondaryPort(secondary_db_port ? String(secondary_db_port) : "");
+    setSecondaryUser(secondary_db_user ?? "");
+    setSecondaryPassword(secondary_db_password ?? "");
+    setSecondaryActive(secondary_db_active ?? false);
+    setPrimaryChoice(primary_database ?? "primary");
+    setBrandName(brand_name ?? "דלי");
+    setThemeColor(themeColorSetting ?? "#1b3aa6");
+  }, [
+    db_host,
+    db_port,
+    db_user,
+    db_password,
+    secondary_db_host,
+    secondary_db_port,
+    secondary_db_user,
+    secondary_db_password,
+    primary_db_active,
+    secondary_db_active,
+    primary_database,
+    brand_name,
+    themeColorSetting
+  ]);
 
   const updateAppearance = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -69,27 +107,74 @@ useEffect(() => {
     }
   };
 
-const updateDatabase = async (event: React.FormEvent) => {
-  event.preventDefault();
-  try {
-    setDbStatus(null);
-      await api.put("/settings", {
-        db_host: host,
-        db_port: port ? Number(port) : null,
-        db_user: user,
-        db_password: password
+  const handlePrimaryActiveChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.checked;
+    if (!next && !secondaryActive) {
+      setDbStatus({ kind: "error", message: "לפחות מסד נתונים אחד חייב להיות פעיל" });
+      return;
+    }
+    setPrimaryActive(next);
+    if (!next && primaryChoice === "primary") {
+      setPrimaryChoice("secondary");
+    }
+  };
+
+  const handleSecondaryActiveChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.checked;
+    if (!next && !primaryActive) {
+      setDbStatus({ kind: "error", message: "לפחות מסד נתונים אחד חייב להיות פעיל" });
+      return;
+    }
+    setSecondaryActive(next);
+    if (!next && primaryChoice === "secondary") {
+      setPrimaryChoice("primary");
+    }
+  };
+
+  const updateDatabase = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      setDbStatus(null);
+      if (primaryChoice === "primary" && !primaryActive) {
+        setDbStatus({ kind: "error", message: "בחרתם במסד הנתונים הראשי כלא פעיל" });
+        return;
+      }
+      if (primaryChoice === "secondary" && !secondaryActive) {
+        setDbStatus({ kind: "error", message: "לא ניתן לקבוע את המסד המשני כראשי כשהוא אינו פעיל" });
+        return;
+      }
+      const payload = {
+        db_host: primaryHost,
+        db_port: primaryPort ? Number(primaryPort) : null,
+        db_user: primaryUser,
+        db_password: primaryPassword ?? "",
+        primary_db_active: primaryActive,
+        primary_database: primaryChoice,
+        secondary_db_host: secondaryHost,
+        secondary_db_port: secondaryPort ? Number(secondaryPort) : null,
+        secondary_db_user: secondaryUser,
+        secondary_db_password: secondaryPassword ?? "",
+        secondary_db_active: secondaryActive
+      };
+      await api.put("/settings", payload);
+      setDbStatus({ kind: "success", message: "הגדרות מסדי הנתונים נשמרו" });
+      setLocal({
+        db_host: payload.db_host ?? "",
+        db_port: payload.db_port,
+        db_user: payload.db_user ?? "",
+        db_password: payload.db_password as string,
+        secondary_db_host: payload.secondary_db_host ?? "",
+        secondary_db_port: payload.secondary_db_port,
+        secondary_db_user: payload.secondary_db_user ?? "",
+        secondary_db_password: payload.secondary_db_password as string,
+        primary_db_active: primaryActive,
+        secondary_db_active: secondaryActive,
+        primary_database: primaryChoice
       });
-    setDbStatus({ kind: "success", message: "פרטי החיבור למסד הנתונים נשמרו" });
-    setLocal({
-      db_host: host,
-      db_port: port ? Number(port) : null,
-      db_user: user,
-      db_password: password
-    });
-  } catch (error) {
-    setDbStatus({ kind: "error", message: formatApiError(error) });
-  }
-};
+    } catch (error) {
+      setDbStatus({ kind: "error", message: formatApiError(error) });
+    }
+  };
 
   const updatePin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -108,33 +193,48 @@ const updateDatabase = async (event: React.FormEvent) => {
   }
 };
 
-  const ensureSchema = async () => {
-  try {
-    setDbStatus(null);
-    const response = await api.post<{ ok: boolean; message: string }>("/db/init");
-    setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
-  } catch (error) {
-    setDbStatus({ kind: "error", message: formatApiError(error) });
-  }
-};
+  const testDbConnection = async (target: "primary" | "secondary") => {
+    try {
+      setDbStatus(null);
+      const isSecondary = target === "secondary";
+      const targetHost = (isSecondary ? secondaryHost : primaryHost) ?? "";
+      const targetUser = (isSecondary ? secondaryUser : primaryUser) ?? "";
+      const targetPassword = isSecondary ? secondaryPassword : primaryPassword;
+      const targetPort = isSecondary ? secondaryPort : primaryPort;
 
-  const testConnection = async () => {
-  try {
-    setDbStatus(null);
-    const payload: Record<string, unknown> = {
-      db_host: host,
-      db_user: user,
-      db_password: password ?? ""
-    };
-    if (port) {
-      payload.db_port = Number(port);
+      if (!targetHost.trim() || !targetUser.trim()) {
+        setDbStatus({ kind: "error", message: "יש להזין כתובת שרת ומשתמש לפני בדיקת חיבור" });
+        return;
+      }
+
+      const payload: Record<string, unknown> = {
+        db_host: targetHost,
+        db_user: targetUser,
+        db_password: targetPassword ?? "",
+        target
+      };
+      if (targetPort) {
+        payload.db_port = Number(targetPort);
+      }
+
+      const response = await api.post<{ ok: boolean; message: string }>("/db/test", payload);
+      setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
+    } catch (error) {
+      setDbStatus({ kind: "error", message: formatApiError(error) });
     }
-    const response = await api.post<{ ok: boolean; message: string }>("/db/test", payload);
-    setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
-  } catch (error) {
-    setDbStatus({ kind: "error", message: formatApiError(error) });
-  }
-};
+  };
+
+  const ensureSchema = async () => {
+    try {
+      setDbStatus(null);
+      const response = await api.post<{ ok: boolean; message: string }>("/db/init", null, {
+        params: { target: schemaTarget }
+      });
+      setDbStatus({ kind: response.data.ok ? "success" : "error", message: response.data.message });
+    } catch (error) {
+      setDbStatus({ kind: "error", message: formatApiError(error) });
+    }
+  };
 
   const exportSettings = async () => {
   try {
@@ -224,61 +324,183 @@ const updateDatabase = async (event: React.FormEvent) => {
       </section>
 
       <section className="card">
-        <h3>חיבור למסד הנתונים</h3>
-        <form onSubmit={updateDatabase} className="input-row">
-          <div>
-            <label htmlFor="dbHost">כתובת שרת</label>
-            <input id="dbHost" value={host} onChange={(event) => setHost(event.target.value)} required />
-          </div>
-          <div>
-            <label htmlFor="dbPort">פורט</label>
-            <input id="dbPort" type="number" value={port} onChange={(event) => setPort(event.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="dbUser">שם משתמש</label>
-            <input id="dbUser" value={user} onChange={(event) => setUser(event.target.value)} required />
-          </div>
-          <div>
-            <label htmlFor="dbPassword">סיסמה</label>
-            <div style={{ position: "relative" }}>
+        <h3>חיבור למסדי נתונים</h3>
+        <form onSubmit={updateDatabase}>
+          <div
+            style={{
+              display: "grid",
+              gap: "1rem",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))"
+            }}
+          >
+            <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}>
+              <legend style={{ fontWeight: 600 }}>מסד נתונים א'</legend>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                <input type="checkbox" checked={primaryActive} onChange={handlePrimaryActiveChange} /> פעיל
+              </label>
+              <label htmlFor="primaryHost">כתובת שרת</label>
               <input
-                id="dbPassword"
-                type={showDbPassword ? "text" : "password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                style={{ paddingLeft: "3.2rem" }}
+                id="primaryHost"
+                value={primaryHost}
+                onChange={(event) => setPrimaryHost(event.target.value)}
+                required={primaryActive}
               />
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setShowDbPassword((prev) => !prev)}
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "0.4rem",
-                  transform: "translateY(-50%)",
-                  padding: "0.25rem 0.6rem",
-                  fontSize: "0.8rem"
-                }}
-              >
-                {showDbPassword ? "הסתר" : "הצג"}
-              </button>
+              <label htmlFor="primaryPort">פורט</label>
+              <input
+                id="primaryPort"
+                type="number"
+                value={primaryPort}
+                onChange={(event) => setPrimaryPort(event.target.value)}
+                min={0}
+              />
+              <label htmlFor="primaryUser">שם משתמש</label>
+              <input
+                id="primaryUser"
+                value={primaryUser}
+                onChange={(event) => setPrimaryUser(event.target.value)}
+                required={primaryActive}
+              />
+              <label htmlFor="primaryPassword">סיסמה</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  id="primaryPassword"
+                  type={showPrimaryPassword ? "text" : "password"}
+                  value={primaryPassword}
+                  onChange={(event) => setPrimaryPassword(event.target.value)}
+                  style={{ paddingLeft: "3.2rem" }}
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowPrimaryPassword((prev) => !prev)}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "0.4rem",
+                    transform: "translateY(-50%)",
+                    padding: "0.25rem 0.6rem",
+                    fontSize: "0.8rem"
+                  }}
+                >
+                  {showPrimaryPassword ? "הסתר" : "הצג"}
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}>
+              <legend style={{ fontWeight: 600 }}>מסד נתונים ב'</legend>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                <input type="checkbox" checked={secondaryActive} onChange={handleSecondaryActiveChange} /> פעיל
+              </label>
+              <label htmlFor="secondaryHost">כתובת שרת</label>
+              <input
+                id="secondaryHost"
+                value={secondaryHost}
+                onChange={(event) => setSecondaryHost(event.target.value)}
+              />
+              <label htmlFor="secondaryPort">פורט</label>
+              <input
+                id="secondaryPort"
+                type="number"
+                value={secondaryPort}
+                onChange={(event) => setSecondaryPort(event.target.value)}
+                min={0}
+              />
+              <label htmlFor="secondaryUser">שם משתמש</label>
+              <input
+                id="secondaryUser"
+                value={secondaryUser}
+                onChange={(event) => setSecondaryUser(event.target.value)}
+              />
+              <label htmlFor="secondaryPassword">סיסמה</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  id="secondaryPassword"
+                  type={showSecondaryPassword ? "text" : "password"}
+                  value={secondaryPassword}
+                  onChange={(event) => setSecondaryPassword(event.target.value)}
+                  style={{ paddingLeft: "3.2rem" }}
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowSecondaryPassword((prev) => !prev)}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "0.4rem",
+                    transform: "translateY(-50%)",
+                    padding: "0.25rem 0.6rem",
+                    fontSize: "0.8rem"
+                  }}
+                >
+                  {showSecondaryPassword ? "הסתר" : "הצג"}
+                </button>
+              </div>
+            </fieldset>
+          </div>
+
+          <div style={{ marginTop: "1.25rem" }}>
+            <label style={{ fontWeight: 600, display: "block", marginBottom: "0.5rem" }}>בחירת מסד נתונים ראשי</label>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <input
+                  type="radio"
+                  name="primaryChoice"
+                  value="primary"
+                  checked={primaryChoice === "primary"}
+                  onChange={(event) => setPrimaryChoice(event.target.value as "primary" | "secondary")}
+                  disabled={!primaryActive}
+                />
+                מסד נתונים א'
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <input
+                  type="radio"
+                  name="primaryChoice"
+                  value="secondary"
+                  checked={primaryChoice === "secondary"}
+                  onChange={(event) => setPrimaryChoice(event.target.value as "primary" | "secondary")}
+                  disabled={!secondaryActive}
+                />
+                מסד נתונים ב'
+              </label>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="secondary" type="submit">
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "1.5rem", alignItems: "flex-end" }}>
+            <button className="secondary" type="button" onClick={() => testDbConnection("primary")}>בדיקת חיבור ראשי</button>
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => testDbConnection("secondary")}
+              disabled={!secondaryHost.trim() || !secondaryUser.trim()}
+            >
+              בדיקת חיבור משני
+            </button>
+            <div>
+              <label htmlFor="schemaTarget">יעד יצירת סכימה</label>
+              <select
+                id="schemaTarget"
+                value={schemaTarget}
+                onChange={(event) => setSchemaTarget(event.target.value as SchemaTarget)}
+                style={{ minWidth: "10rem" }}
+              >
+                <option value="active">מסדי נתונים פעילים</option>
+                <option value="primary">מסד נתונים ראשי</option>
+                <option value="secondary">מסד נתונים משני</option>
+                <option value="both">שני המסדים</option>
+              </select>
+            </div>
+            <button className="secondary" type="button" onClick={ensureSchema}>
+              יצירת/עדכון סכימה
+            </button>
+            <div style={{ flexGrow: 1 }} />
+            <button className="primary" type="submit">
               שמירת פרטי חיבור
             </button>
           </div>
         </form>
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "1rem" }}>
-          <button className="secondary" onClick={testConnection} type="button">
-            בדיקת חיבור
-          </button>
-          <button className="primary" onClick={ensureSchema} type="button">
-            יצירת/עדכון סכימה
-          </button>
-        </div>
         {dbStatus && <div className={`status ${dbStatus.kind}`} style={{ marginTop: "0.75rem" }}>{dbStatus.message}</div>}
       </section>
 

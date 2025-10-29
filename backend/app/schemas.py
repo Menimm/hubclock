@@ -119,6 +119,13 @@ class SettingsOut(BaseModel):
     db_port: Optional[int] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    secondary_db_host: Optional[str] = None
+    secondary_db_port: Optional[int] = None
+    secondary_db_user: Optional[str] = None
+    secondary_db_password: Optional[str] = None
+    primary_db_active: bool = True
+    secondary_db_active: bool = False
+    primary_database: str = "primary"
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
 
@@ -131,6 +138,13 @@ class SettingsUpdate(BaseModel):
     db_port: Optional[int] = None
     db_user: Optional[str] = Field(None, max_length=64)
     db_password: Optional[str] = Field(None, max_length=128)
+    secondary_db_host: Optional[str] = Field(None, max_length=128)
+    secondary_db_port: Optional[int] = None
+    secondary_db_user: Optional[str] = Field(None, max_length=64)
+    secondary_db_password: Optional[str] = Field(None, max_length=128)
+    primary_database: Optional[str] = Field(None, pattern="^(primary|secondary)$")
+    primary_db_active: Optional[bool] = None
+    secondary_db_active: Optional[bool] = None
     brand_name: Optional[str] = Field(None, max_length=120)
     theme_color: Optional[str] = Field(None, max_length=16)
 
@@ -145,6 +159,7 @@ class DBTestRequest(BaseModel):
     db_port: Optional[int] = None
     db_user: Optional[str] = Field(None, max_length=64)
     db_password: Optional[str] = Field(None, max_length=128)
+    target: str = Field("primary", pattern="^(primary|secondary)$")
 
 
 class PinVerifyRequest(BaseModel):
@@ -161,6 +176,13 @@ class SettingsExport(BaseModel):
     db_port: Optional[int] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    secondary_db_host: Optional[str] = None
+    secondary_db_port: Optional[int] = None
+    secondary_db_user: Optional[str] = None
+    secondary_db_password: Optional[str] = None
+    primary_database: Optional[str] = None
+    primary_db_active: Optional[bool] = None
+    secondary_db_active: Optional[bool] = None
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
@@ -172,6 +194,13 @@ class SettingsImport(BaseModel):
     db_port: Optional[int] = None
     db_user: Optional[str] = None
     db_password: Optional[str] = None
+    secondary_db_host: Optional[str] = None
+    secondary_db_port: Optional[int] = None
+    secondary_db_user: Optional[str] = None
+    secondary_db_password: Optional[str] = None
+    primary_database: Optional[str] = Field(None, pattern="^(primary|secondary)$")
+    primary_db_active: Optional[bool] = None
+    secondary_db_active: Optional[bool] = None
     pin: Optional[str] = Field(None, min_length=4, max_length=12)
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None

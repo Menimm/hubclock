@@ -20,3 +20,9 @@ db-test:
 
 clean:
 	rm -rf backend/.venv frontend/node_modules
+
+docker-build:
+	./scripts/build_docker.sh
+
+docker-build-tag:
+	./scripts/build_docker.sh $(TAG)

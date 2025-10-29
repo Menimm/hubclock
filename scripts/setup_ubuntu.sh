@@ -294,7 +294,7 @@ if [[ ${INSTALL_NGINX_CHOICE:-N} =~ ^[Yy]$ ]]; then
   nginx_server_name=${nginx_server_name:-$server_name_default}
 
   nginx_listen_default=80
-  read -rp "Public port Nginx should listen on [$nginx_listen_default]: " nginx_listen
+  read -rp "Public HTTP port Nginx should listen on [$nginx_listen_default]: " nginx_listen
   nginx_listen=${nginx_listen:-$nginx_listen_default}
 
   nginx_conf_path=/etc/nginx/sites-available/hubclock.conf
@@ -338,10 +338,26 @@ NGINX_CONF
 
   read -rp "Request Let's Encrypt SSL certificates with certbot now? [y/N] " ENABLE_CERTBOT
   if [[ ${ENABLE_CERTBOT:-N} =~ ^[Yy]$ ]]; then
+    if [[ "$nginx_listen" != "80" ]]; then
+      echo "[!] Let's Encrypt HTTP-01 validation requires port 80. Temporarily binding 80 for validation."
+      sed -i "s/listen ${nginx_listen};/listen 80;/" "$nginx_conf_path"
+      systemctl reload nginx
+    fi
     apt install -y certbot python3-certbot-nginx
     echo "[i] Certbot will reconfigure Nginx for HTTPS. Ensure DNS for ${nginx_server_name} points to this server."
     certbot --nginx -d "$nginx_server_name"
-    echo "[i] Certbot finished. Certificates stored under /etc/letsencrypt/live/${nginx_server_name}/"
+    https_port_default=443
+    read -rp "HTTPS port to serve traffic on after certificate issuance [${https_port_default}]: " nginx_https_port
+    nginx_https_port=${nginx_https_port:-$https_port_default}
+    if [[ "$nginx_https_port" != "443" ]]; then
+      sed -i "s/listen 443 ssl;/listen ${nginx_https_port} ssl;/" "$nginx_conf_path"
+      sed -i "s/listen \[::\]:443 ssl;/listen [::]:${nginx_https_port} ssl;/" "$nginx_conf_path" || true
+    fi
+    if [[ "$nginx_listen" != "80" ]]; then
+      sed -i "s/listen 80;/listen ${nginx_listen};/" "$nginx_conf_path"
+    fi
+    systemctl reload nginx
+    echo "[i] Certbot finished. Certificates stored under /etc/letsencrypt/live/${nginx_server_name}/. HTTPS listens on ${nginx_https_port}."
   fi
 fi
 

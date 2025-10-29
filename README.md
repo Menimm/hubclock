@@ -151,6 +151,8 @@ Logs live in `/var/log/mysqld-root.log`; stop/status are available via the same 
 
 Run the Ubuntu setup script with the Nginx option (`Install and configure Nginx reverse proxy on port 80? -> y`). The helper installs Nginx, lets you choose the public listen port, writes `/etc/nginx/sites-available/hubclock.conf`, proxies traffic to the backend, and can switch you to the production backend service (which serves the built frontend from `frontend/dist`). After choosing the production option you only need the selected port exposed—Nginx forwards API and static requests to the backend on port 8000.
 
+If your DNS already points to the VM, answer `y` to the "Request Let's Encrypt SSL certificates" prompt to have Certbot obtain and configure HTTPS automatically. Certificates go under `/etc/letsencrypt/live/<hostname>/`, and Nginx will be reloaded with the SSL-ready config.
+
 ### Production Update Procedure
 
 1. Pull the latest code: `git pull`.

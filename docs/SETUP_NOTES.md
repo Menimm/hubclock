@@ -25,7 +25,7 @@
 - Ensure schema with `curl -X POST http://127.0.0.1:8000/db/init`.
 - Containers without full systemd permissions can launch MySQL directly as root with `sudo ./scripts/manage_mysql_root.sh start` (logs in `/var/log/mysqld-root.log`).
 - Setup helpers detect the server's IPv4 addresses and suggest them as defaults for `UVICORN_HOST`, `VITE_DEV_HOST`, and `VITE_API_BASE_URL` to simplify remote access.
-- Choose the Nginx option in `scripts/setup_ubuntu.sh` to install a reverse proxy (you can set the public port during the prompt); the script creates `/etc/nginx/sites-available/hubclock.conf` and can switch to the production backend service so the entire app is reachable via `http://<host>:<port>/`.
+- Choose the Nginx option in `scripts/setup_ubuntu.sh` to install a reverse proxy (you can set the public port during the prompt); the script creates `/etc/nginx/sites-available/hubclock.conf` and can switch to the production backend service so the entire app is reachable via `http://<host>:<port>/`. If DNS is already in place, opt into the Certbot step to request Let's Encrypt certificates and serve HTTPS immediately.
 
 ## Default Settings
 - Currency: `ILS`

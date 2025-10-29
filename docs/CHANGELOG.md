@@ -8,6 +8,7 @@
 - Dockerfile וסקריפט `scripts/build_docker.sh` להרכבת דימוי אחוד; ה-API משרת את ה-frontend המקורמל מתוך `frontend/dist`.
 - עריכת ומחיקת משמרות מתוך הדוח היומי (כולל אימות PIN) באמצעות מסלולי `PUT /time-entries/{id}` ו-`DELETE /time-entries/{id}`.
 - מעקב אחר גרסת סכימת בסיס הנתונים (`schema_version`) והתרעה ממשקית כאשר יש לעדכן את הסכימה להפעלת יכולות חדשות.
+- סקריפט systemd תומך כעת ב-`--production` לבניית Frontend ולהתקנת שירות backend יחיד למצב פרודקשן, לצד מצב dev שממשיך להריץ את שרת ה-Vite.
 
 ### Changed
 - מסלולי `/db/test` ו-`/db/init` תומכים בפרמטר `target` (primary/secondary/both/active) ומחזירים הודעות מפורטות לפי היעד.

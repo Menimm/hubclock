@@ -4,7 +4,9 @@
 - Backend: `PYTHONPATH=backend backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
 - Frontend: `npm_config_cache=.cache/npm npm run dev -- --host 127.0.0.1 --port 5173`
 - Provisioning script: `sudo ./scripts/setup_ubuntu.sh`
-- Install systemd units: `sudo ./scripts/install_services.sh`
+- Install systemd units:
+  - Development (backend + Vite dev server): `sudo ./scripts/install_services.sh --dev`
+  - Production (backend only, serves built frontend): `sudo ./scripts/install_services.sh --production`
 - Docker image builder: `./scripts/build_docker.sh [tag]`
 - `scripts/setup_backend.sh` creates/updates `backend/.env` and interactively captures `UVICORN_HOST` and `UVICORN_PORT`.
 - `scripts/setup_frontend.sh` creates/updates `frontend/.env` and prompts for `VITE_API_BASE_URL` and `VITE_DEV_PORT`.

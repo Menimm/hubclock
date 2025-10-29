@@ -103,6 +103,20 @@ sudo systemctl start hubclock-frontend.service
 
 Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. Frontend listens on the `VITE_DEV_PORT` value (default 5173) and the backend on `UVICORN_PORT` (default 8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
 
+To install the development services (backend w/ auto-reload + Vite dev server), run:
+
+```bash
+sudo ./scripts/install_services.sh --dev
+```
+
+For a production install that serves the compiled frontend from the backend, run:
+
+```bash
+sudo ./scripts/install_services.sh --production
+```
+
+The production option builds `frontend/dist`, installs `hubclock-backend.service` with multiple uvicorn workers, and disables the Vite dev service.
+
 ## Docker
 
 Build an all-in-one image (FastAPI backend + compiled frontend) with:

@@ -3,15 +3,21 @@ set -euo pipefail
 
 usage() {
   cat <<USAGE
-Usage: sudo ./scripts/setproduction.sh <command>
+Usage: sudo ./scripts/setproduction.sh <command> [component ...]
 
 Commands:
-  install     Install and enable Nginx + production backend service
-  uninstall   Stop and disable Nginx + production backend service
-  start       Start Nginx, MySQL, and production backend service
-  stop        Stop production backend service and Nginx (MySQL left untouched)
-  status      Show status for production backend, Nginx, and MySQL
+  install     Install and enable selected component services (default: all)
+  uninstall   Stop/disable selected component services and remove configs
+  start       Start selected component services (default: all)
+  stop        Stop selected component services (default: all)
+  status      Show status for selected component services (default: all)
   help        Show this message
+
+Components:
+  backend     Production FastAPI service (hubclock-backend.service)
+  nginx       Nginx reverse proxy (hubclock site config)
+  mysql       MySQL/MariaDB database service (if installed)
+  all         Apply to every component (default when none specified)
 
 The script assumes \`scripts/setup_ubuntu.sh\` has already configured the environment.
 USAGE
@@ -53,55 +59,51 @@ remove_service() {
   fi
 }
 
-install() {
-  need_root
-  echo "[i] Installing production backend service"
-  ./scripts/install_services.sh --production
-  echo "[i] Ensuring Nginx and MySQL are enabled"
-  start_service nginx
-  start_service mysql || start_service mariadb || true
-  systemctl daemon-reload
-  echo "[✓] Installation complete"
+ensure_components() {
+  if [[ $# -eq 0 ]]; then
+    comps=(backend nginx mysql)
+  else
+    for item in "$@"; do
+      case "$item" in
+        all)
+          comps=(backend nginx mysql)
+          return
+          ;;
+        backend|nginx|mysql)
+          comps+=("$item")
+          ;;
+        *)
+          echo "[!] Unknown component: $item" >&2
+          exit 1
+          ;;
+      esac
+    done
+  fi
 }
 
-uninstall() {
-  need_root
-  echo "[i] Removing production backend service and Nginx site"
-  ./scripts/install_services.sh --remove-production
+install_backend() { ./scripts/install_services.sh --production; }
+install_nginx()   { start_service nginx; }
+install_mysql()   { start_service mysql || start_service mariadb || true; }
+
+uninstall_backend() { ./scripts/install_services.sh --remove-production; }
+uninstall_nginx() {
   systemctl stop nginx || true
   systemctl disable nginx || true
   rm -f /etc/nginx/sites-enabled/hubclock.conf /etc/nginx/sites-available/hubclock.conf || true
-  systemctl daemon-reload
-  echo "[✓] Uninstall complete"
 }
+uninstall_mysql() { echo "[i] Skipping MySQL removal. Manage it manually if desired."; }
 
-start_all() {
-  need_root
-  start_service mysql || start_service mariadb || true
-  start_service nginx
-  start_service hubclock-backend
-  systemctl status hubclock-backend.service >/dev/null 2>&1 || true
-  systemctl status nginx.service >/dev/null 2>&1 || true
-  if service_exists mysql; then
-    systemctl status mysql.service >/dev/null 2>&1 || true
-  elif service_exists mariadb; then
-    systemctl status mariadb.service >/dev/null 2>&1 || true
-  fi
-  echo "[✓] Services started"
-}
+start_backend() { start_service hubclock-backend; }
+start_nginx()   { start_service nginx; }
+start_mysql()   { start_service mysql || start_service mariadb || true; }
 
-stop_all() {
-  need_root
-  stop_service hubclock-backend
-  stop_service nginx
-  echo "[i] Production backend and Nginx stopped. MySQL left running."
-}
+stop_backend() { stop_service hubclock-backend; }
+stop_nginx()   { stop_service nginx; }
+stop_mysql()   { echo "[i] Leaving MySQL running. Use systemctl stop mysql if needed."; }
 
-show_status() {
-  systemctl status hubclock-backend.service || true
-  echo
-  systemctl status nginx.service || true
-  echo
+status_backend() { systemctl status hubclock-backend.service || true; }
+status_nginx()   { systemctl status nginx.service || true; }
+status_mysql() {
   if service_exists mysql; then
     systemctl status mysql.service || true
   elif service_exists mariadb; then
@@ -111,23 +113,93 @@ show_status() {
   fi
 }
 
+run_install() {
+  need_root
+  ensure_components "${@:2}"
+  for comp in "${comps[@]}"; do
+    echo "[i] Installing $comp"
+    case "$comp" in
+      backend) install_backend ;;
+      nginx)   install_nginx   ;;
+      mysql)   install_mysql   ;;
+    esac
+  done
+  systemctl daemon-reload
+  echo "[✓] Install complete"
+}
+
+run_uninstall() {
+  need_root
+  ensure_components "${@:2}"
+  for comp in "${comps[@]}"; do
+    echo "[i] Uninstalling $comp"
+    case "$comp" in
+      backend) uninstall_backend ;;
+      nginx)   uninstall_nginx   ;;
+      mysql)   uninstall_mysql   ;;
+    esac
+  done
+  systemctl daemon-reload
+  echo "[✓] Uninstall complete"
+}
+
+run_start() {
+  need_root
+  ensure_components "${@:2}"
+  for comp in "${comps[@]}"; do
+    echo "[i] Starting $comp"
+    case "$comp" in
+      backend) start_backend ;;
+      nginx)   start_nginx   ;;
+      mysql)   start_mysql   ;;
+    esac
+  done
+  echo "[✓] Start complete"
+}
+
+run_stop() {
+  need_root
+  ensure_components "${@:2}"
+  for comp in "${comps[@]}"; do
+    echo "[i] Stopping $comp"
+    case "$comp" in
+      backend) stop_backend ;;
+      nginx)   stop_nginx   ;;
+      mysql)   stop_mysql   ;;
+    esac
+  done
+}
+
+run_status() {
+  ensure_components "${@:2}"
+  for comp in "${comps[@]}"; do
+    echo "=== ${comp^^} ==="
+    case "$comp" in
+      backend) status_backend ;;
+      nginx)   status_nginx   ;;
+      mysql)   status_mysql   ;;
+    esac
+    echo
+  done
+}
+
 main() {
   local cmd=${1:-help}
   case "$cmd" in
     install)
-      install
+      run_install "$@"
       ;;
     uninstall)
-      uninstall
+      run_uninstall "$@"
       ;;
     start)
-      start_all
+      run_start "$@"
       ;;
     stop)
-      stop_all
+      run_stop "$@"
       ;;
     status)
-      show_status
+      run_status "$@"
       ;;
     help)
       usage

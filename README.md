@@ -139,6 +139,12 @@ For quick management of the dev services, use:
 ./scripts/manage_dev_services.sh start|stop|restart|status
 ```
 
+For production control (install/start/stop/status), use:
+
+```bash
+sudo ./scripts/setproduction.sh help
+```
+
 If systemd refuses to start MySQL/MariaDB (common in root-only containers), launch it directly as root:
 
 ```bash

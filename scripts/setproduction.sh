@@ -11,6 +11,7 @@ Commands:
   start       Start Nginx, MySQL, and production backend service
   stop        Stop production backend service and Nginx (MySQL left untouched)
   status      Show status for production backend, Nginx, and MySQL
+  help        Show this message
 
 The script assumes \`scripts/setup_ubuntu.sh\` has already configured the environment.
 USAGE
@@ -79,7 +80,13 @@ start_all() {
   start_service mysql || start_service mariadb || true
   start_service nginx
   start_service hubclock-backend
-  systemctl status hubclock-backend.service nginx.service mysql.service, mariadb.service >/dev/null 2>&1 || true
+  systemctl status hubclock-backend.service >/dev/null 2>&1 || true
+  systemctl status nginx.service >/dev/null 2>&1 || true
+  if service_exists mysql; then
+    systemctl status mysql.service >/dev/null 2>&1 || true
+  elif service_exists mariadb; then
+    systemctl status mariadb.service >/dev/null 2>&1 || true
+  fi
   echo "[✓] Services started"
 }
 
@@ -121,6 +128,9 @@ main() {
       ;;
     status)
       show_status
+      ;;
+    help)
+      usage
       ;;
     *)
       usage

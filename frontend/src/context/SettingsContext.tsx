@@ -61,7 +61,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     primary_db_active: true,
     secondary_db_active: false,
     primary_database: "primary",
-    brand_name: "דלי",
+    brand_name: "העסק שלי",
     theme_color: "#1b3aa6"
   });
 
@@ -82,7 +82,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       primary_db_active: response.data.primary_db_active ?? true,
       secondary_db_active: response.data.secondary_db_active ?? false,
       primary_database: (response.data.primary_database as DatabaseKey) ?? "primary",
-      brand_name: response.data.brand_name ?? "דלי",
+      brand_name: response.data.brand_name ?? "העסק שלי",
       theme_color: response.data.theme_color ?? "#1b3aa6"
     }));
   }, []);

@@ -44,7 +44,7 @@ const SettingsPage: React.FC = () => {
   const [secondaryPassword, setSecondaryPassword] = useState(secondary_db_password ?? "");
   const [secondaryActive, setSecondaryActive] = useState<boolean>(secondary_db_active ?? false);
   const [primaryChoice, setPrimaryChoice] = useState<"primary" | "secondary">(primary_database ?? "primary");
-  const [brandName, setBrandName] = useState(brand_name ?? "דלי");
+  const [brandName, setBrandName] = useState(brand_name ?? "העסק שלי");
   const [themeColor, setThemeColor] = useState(themeColorSetting ?? "#1b3aa6");
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
@@ -73,7 +73,7 @@ useEffect(() => {
     setSecondaryPassword(secondary_db_password ?? "");
     setSecondaryActive(secondary_db_active ?? false);
     setPrimaryChoice(primary_database ?? "primary");
-    setBrandName(brand_name ?? "דלי");
+    setBrandName(brand_name ?? "העסק שלי");
     setThemeColor(themeColorSetting ?? "#1b3aa6");
   }, [
     db_host,
@@ -302,7 +302,7 @@ useEffect(() => {
               id="brandName"
               value={brandName}
               onChange={(event) => setBrandName(event.target.value)}
-              placeholder="לדוגמה: דלי משפחתי"
+              placeholder="לדוגמה: בית הקפה שלנו"
             />
           </div>
           <div>

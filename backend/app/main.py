@@ -9,7 +9,7 @@ from collections import defaultdict
 from io import BytesIO
 from urllib.parse import quote_plus
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
@@ -156,6 +156,15 @@ def configure_from_setting(setting: Optional[Setting]) -> None:
     configure_engines(primary_url, secondary_url)
 
 
+def _validate_admin_pin(session: Session, pin: str) -> Setting:
+    setting = session.scalar(select(Setting))
+    if not setting or not setting.pin_hash:
+        raise HTTPException(status_code=400, detail="לא הוגדר קוד PIN לניהול")
+    if not verify_pin(pin, setting.pin_hash):
+        raise HTTPException(status_code=403, detail="קוד ה-PIN שגוי")
+    return setting
+
+
 def ensure_legacy_schema(engine) -> None:
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
@@ -203,7 +212,7 @@ def populate_setting_defaults(setting: Setting) -> None:
     if setting.db_password is None:
         setting.db_password = settings.mysql_password
     if not setting.brand_name:
-        setting.brand_name = "דלי"
+        setting.brand_name = "העסק שלי"
     if not setting.theme_color:
         setting.theme_color = "#1b3aa6"
     if not setting.primary_database or setting.primary_database not in DATABASE_TARGETS:
@@ -397,7 +406,7 @@ def create_database_schema(target: str = "active"):
                             if current_setting and current_setting.db_password is not None
                             else settings.mysql_password
                         ),
-                        brand_name=current_setting.brand_name if current_setting and current_setting.brand_name else "דלי",
+                        brand_name=current_setting.brand_name if current_setting and current_setting.brand_name else "העסק שלי",
                         theme_color=current_setting.theme_color if current_setting and current_setting.theme_color else "#1b3aa6",
                         secondary_db_host=current_setting.secondary_db_host if current_setting else None,
                         secondary_db_port=current_setting.secondary_db_port if current_setting else None,
@@ -583,6 +592,59 @@ def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: S
     db.add(entry)
     db.flush()
     return entry
+    
+
+@app.put("/time-entries/{entry_id}", response_model=schemas.ManualEntryOut)
+def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Session = Depends(get_db)):
+    if not payload.pin:
+        raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
+    _validate_admin_pin(db, payload.pin)
+
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="רשומת המשמרת לא נמצאה")
+
+    new_clock_in = entry.clock_in
+    new_clock_out = entry.clock_out
+
+    if payload.clock_in is not None:
+        new_clock_in = payload.clock_in.replace(tzinfo=None) if payload.clock_in.tzinfo else payload.clock_in
+    if payload.clock_out is not None:
+        new_clock_out = payload.clock_out.replace(tzinfo=None) if payload.clock_out.tzinfo else payload.clock_out
+
+    if new_clock_out and new_clock_in and new_clock_out <= new_clock_in:
+        raise HTTPException(status_code=400, detail="זמן היציאה חייב להיות מאוחר מזמן הכניסה")
+
+    entry.clock_in = new_clock_in
+    entry.clock_out = new_clock_out
+    entry.is_manual = True
+    db.flush()
+
+    return schemas.ManualEntryOut(
+        id=entry.id,
+        employee_id=entry.employee_id,
+        clock_in=entry.clock_in,
+        clock_out=entry.clock_out,
+        manual=entry.is_manual,
+    )
+
+
+@app.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_time_entry(
+    entry_id: int,
+    payload: schemas.TimeEntryDelete = Body(...),
+    db: Session = Depends(get_db),
+):
+    if not payload.pin:
+        raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
+    _validate_admin_pin(db, payload.pin)
+
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="רשומת המשמרת לא נמצאה")
+
+    db.delete(entry)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/clock/in", response_model=schemas.ClockResponse)
@@ -915,7 +977,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
             primary_database="primary",
             primary_db_active=True,
             secondary_db_active=False,
-            brand_name="דלי",
+            brand_name="העסק שלי",
             theme_color="#1b3aa6",
         )
         db.add(setting)
@@ -1046,7 +1108,7 @@ def export_settings(db: Session = Depends(get_db)):
             primary_database="primary",
             primary_db_active=True,
             secondary_db_active=False,
-            brand_name="דלי",
+            brand_name="העסק שלי",
             theme_color="#1b3aa6",
         )
         db.add(setting)

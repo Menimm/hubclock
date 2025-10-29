@@ -22,7 +22,7 @@ def main() -> None:
                 db_port=settings.mysql_port,
                 db_user=settings.mysql_user,
                 db_password=settings.mysql_password,
-                brand_name="דלי",
+                brand_name="העסק שלי",
                 theme_color="#1b3aa6",
             )
             session.add(setting)

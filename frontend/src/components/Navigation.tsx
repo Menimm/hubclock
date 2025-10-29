@@ -6,7 +6,7 @@ import { useSettings } from "../context/SettingsContext";
 export const Navigation: React.FC = () => {
   const { isUnlocked, lock } = useAuth();
   const { brand_name, theme_color } = useSettings();
-  const title = brand_name || "דלי";
+  const title = brand_name || "העסק שלי";
   const accent = theme_color || "#1b3aa6";
 
   const linkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({

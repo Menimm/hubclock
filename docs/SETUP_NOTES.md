@@ -19,7 +19,7 @@
 ## Default Settings
 - Currency: `ILS`
 - Theme color: `#1b3aa6`
-- Brand name: `דלי`
+- Brand name: `העסק שלי`
 - PIN must be set via Settings UI or `PUT /settings` before accessing admin screens.
 - Settings API: `GET/PUT /settings`, `POST /settings/import`, `GET /settings/export`.
 
@@ -29,6 +29,7 @@
 - נתוני עובדים/משמרות ניתנים לייצוא ב-`GET /employees/export` ולהחזרה ב-`POST /employees/import` (עם דגל `replace_existing`).
 - כתובת ה-API בצד הלקוח ניתנת להגדרה דרך המשתנה `VITE_API_BASE_URL` בזמן בנייה או על ידי הצבת `window.__HUBCLOCK_API_BASE__` לפני טעינת האפליקציה. ברירת המחדל מצביעה על `http://127.0.0.1:8000`; ניתן לשנות ל-`/api` אם פרוקסי חיצוני מנתב לבקאנד. `VITE_DEV_PORT` שולט על פורט שרת הפיתוח של Vite.
 - בלשונית ההגדרות ניתן להפעיל/להשבית כל אחד משני מסדי הנתונים, לבחור מי הראשי, להריץ בדיקת חיבור (`/db/test` עם `target=primary|secondary`) ולייצר סכימה לפי יעד (`/db/init?target=active|primary|secondary|both`).
+- בדוח היומי ניתן לערוך או למחוק משמרות (כולל הזנת PIN לוידוא), מה שמפעיל את מסלולי `PUT /time-entries/{id}` ו-`DELETE /time-entries/{id}`.
 
 ## Docker
 - `./scripts/build_docker.sh hubclock:latest` — בונה דימוי הכולל את ה-API וה-frontend המהודק.

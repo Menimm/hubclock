@@ -48,6 +48,7 @@ interface DailyReportResponse {
 
 type Mode = "month" | "custom";
 type ReportType = "summary" | "daily";
+type StatusMessage = { kind: "success" | "error"; message: string } | null;
 
 const DashboardPage: React.FC = () => {
   const { currency } = useSettings();
@@ -60,7 +61,12 @@ const DashboardPage: React.FC = () => {
   const [employeeId, setEmployeeId] = useState<string>("all");
   const [summaryReport, setSummaryReport] = useState<ReportResponse | null>(null);
   const [dailyReport, setDailyReport] = useState<DailyReportResponse | null>(null);
-  const [status, setStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [status, setStatus] = useState<StatusMessage>(null);
+  const [dailyStatus, setDailyStatus] = useState<StatusMessage>(null);
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
+  const [editClockIn, setEditClockIn] = useState<string>("");
+  const [editClockOut, setEditClockOut] = useState<string>("");
+  const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [includePayments, setIncludePayments] = useState(false);
   const currencyFormatter = useMemo(
@@ -100,6 +106,7 @@ const DashboardPage: React.FC = () => {
 
   const runReport = async () => {
     try {
+      setDailyStatus(null);
       if (reportType === "summary") {
         const response = await api.get<ReportResponse>(`/reports?${filters.toString()}`);
         setSummaryReport(response.data);
@@ -169,6 +176,87 @@ const DashboardPage: React.FC = () => {
     }
   };
 
+  const toInputValue = (iso: string) => {
+    const date = new Date(iso);
+    const tzOffset = date.getTimezoneOffset();
+    const local = new Date(date.getTime() - tzOffset * 60000);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const resetEditingState = () => {
+    setEditingEntryId(null);
+    setEditClockIn("");
+    setEditClockOut("");
+  };
+
+  const startEditingShift = (shift: DailyShift) => {
+    setDailyStatus(null);
+    setEditingEntryId(shift.entry_id);
+    setEditClockIn(toInputValue(shift.clock_in));
+    setEditClockOut(toInputValue(shift.clock_out));
+  };
+
+  const saveShiftChanges = async () => {
+    if (!editingEntryId) {
+      return;
+    }
+    if (!editClockIn || !editClockOut) {
+      setDailyStatus({ kind: "error", message: "יש להזין זמני כניסה ויציאה תקינים" });
+      return;
+    }
+    const pin = window.prompt("הזינו קוד PIN לאישור העדכון");
+    if (!pin) {
+      return;
+    }
+
+    setIsSavingEntry(true);
+    try {
+      await api.put(`/time-entries/${editingEntryId}`, {
+        pin: pin.trim(),
+        clock_in: new Date(editClockIn).toISOString(),
+        clock_out: new Date(editClockOut).toISOString()
+      });
+      await runReport();
+      setDailyStatus({ kind: "success", message: "המשמרת עודכנה בהצלחה" });
+      resetEditingState();
+    } catch (error) {
+      setDailyStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSavingEntry(false);
+    }
+  };
+
+  const cancelShiftEditing = () => {
+    resetEditingState();
+    setDailyStatus(null);
+  };
+
+  const deleteShift = async (shift: DailyShift) => {
+    if (!window.confirm("למחוק את המשמרת שנבחרה?")) {
+      return;
+    }
+    const pin = window.prompt("הזינו קוד PIN למחיקה");
+    if (!pin) {
+      return;
+    }
+
+    setIsSavingEntry(true);
+    try {
+      await api.delete(`/time-entries/${shift.entry_id}`, {
+        data: { pin: pin.trim() }
+      });
+      if (editingEntryId === shift.entry_id) {
+        resetEditingState();
+      }
+      await runReport();
+      setDailyStatus({ kind: "success", message: "המשמרת נמחקה" });
+    } catch (error) {
+      setDailyStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSavingEntry(false);
+    }
+  };
+
   const renderSummary = () => {
     if (!summaryReport) {
       return <p style={{ marginTop: "1rem" }}>הפעילו דוח כדי לצפות בנתונים.</p>;
@@ -223,6 +311,11 @@ const DashboardPage: React.FC = () => {
         <h3>
           יומן משמרות: {dailyReport.range_start} – {dailyReport.range_end}
         </h3>
+        {dailyStatus && (
+          <div className={`status ${dailyStatus.kind}`} style={{ marginBottom: "1rem" }}>
+            {dailyStatus.message}
+          </div>
+        )}
         {dailyReport.employees.length === 0 ? (
           <p>לא נמצאו משמרות בתאריכים שנבחרו.</p>
         ) : (
@@ -240,17 +333,92 @@ const DashboardPage: React.FC = () => {
                       <th>כניסה</th>
                       <th>יציאה</th>
                       <th>משך (דקות)</th>
+                      <th style={{ minWidth: "160px" }}>פעולות</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {employee.shifts.map((shift) => (
-                      <tr key={shift.entry_id}>
-                        <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
-                        <td>{format(new Date(shift.clock_in), "HH:mm", { locale: he })}</td>
-                        <td>{format(new Date(shift.clock_out), "HH:mm", { locale: he })}</td>
-                        <td>{shift.duration_minutes}</td>
-                      </tr>
-                    ))}
+                    {employee.shifts.map((shift) => {
+                      const isEditing = editingEntryId === shift.entry_id;
+                      let durationPreview: number | string = shift.duration_minutes;
+                      if (isEditing) {
+                        if (!editClockIn || !editClockOut) {
+                          durationPreview = "-";
+                        } else {
+                          const startMs = new Date(editClockIn).getTime();
+                          const endMs = new Date(editClockOut).getTime();
+                          durationPreview = Number.isNaN(startMs) || Number.isNaN(endMs)
+                            ? "-"
+                            : Math.max(0, Math.round((endMs - startMs) / 60000));
+                        }
+                      }
+
+                      return (
+                        <tr key={shift.entry_id} style={isEditing ? { background: "#eef2ff" } : undefined}>
+                          <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="datetime-local"
+                                value={editClockIn}
+                                onChange={(event) => setEditClockIn(event.target.value)}
+                                style={{ minWidth: "200px" }}
+                              />
+                            ) : (
+                              format(new Date(shift.clock_in), "HH:mm", { locale: he })
+                            )}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="datetime-local"
+                                value={editClockOut}
+                                onChange={(event) => setEditClockOut(event.target.value)}
+                                style={{ minWidth: "200px" }}
+                              />
+                            ) : (
+                              format(new Date(shift.clock_out), "HH:mm", { locale: he })
+                            )}
+                          </td>
+                          <td>{durationPreview}</td>
+                          <td>
+                            {isEditing ? (
+                              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                                <button
+                                  className="primary"
+                                  type="button"
+                                  disabled={isSavingEntry}
+                                  onClick={saveShiftChanges}
+                                >
+                                  שמירה
+                                </button>
+                                <button
+                                  className="secondary"
+                                  type="button"
+                                  onClick={cancelShiftEditing}
+                                  disabled={isSavingEntry}
+                                >
+                                  ביטול
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                                <button className="secondary" type="button" onClick={() => startEditingShift(shift)}>
+                                  עריכה
+                                </button>
+                                <button
+                                  className="secondary"
+                                  type="button"
+                                  onClick={() => deleteShift(shift)}
+                                  disabled={isSavingEntry}
+                                >
+                                  מחיקה
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

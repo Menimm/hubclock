@@ -1,6 +1,6 @@
-# HubClock Deli
+# HubClock
 
-HubClock is a small-footprint time tracking kiosk for a five-employee deli. It includes a FastAPI backend, a React (Vite) frontend, and a MySQL database. Employees clock in/out with a masked ID, while administrators manage staff, pay rates, reports, and settings behind a PIN-protected area.
+HubClock is a small-footprint time tracking kiosk for neighborhood shops, delis, and other small teams. It includes a FastAPI backend, a React (Vite) frontend, and a MySQL database. Employees clock in/out with a masked ID, while administrators manage staff, pay rates, reports, and settings behind a PIN-protected area.
 
 ## Stack Overview
 
@@ -55,7 +55,7 @@ HubClock is a small-footprint time tracking kiosk for a five-employee deli. It i
 - **Employees**: ניהול עובדים מלא כולל עדכון שכר שעתי, מצב פעיל/לא פעיל, הזנת משמרות ידניות וייצוא/ייבוא JSON לגיבוי ושחזור.
 - **Dashboard**: דוחות סיכום חודשיים או טווח מותאם לצד יומן יומי המציג לכל עובד את התאריכים ושעות העבודה, כולל חישוב שכר משוער במטבע הנבחר וייצוא לאקסל (בחירה האם לכלול רכיבי שכר).
 - **Redundant Storage**: כתובות חיבור לשני מסדי נתונים MySQL (ראשי ומשני) עם סימון פעילות, בחירת המסד הראשי לקריאה, וסנכרון אוטומטי של כל הנתונים לכל מסד פעיל.
-- **Settings**: בחירת מטבע (ברירת מחדל ‎ILS‎) וצבע נושא, קביעת שם העסק המופיע בכותרות, הגדרת מסדי הנתונים הפעילים (כולל בדיקת חיבור/יצירת סכימה לכל יעד), קוד PIN מנהל, וייצוא/ייבוא מלא של ההגדרות—all מהדפדפן.
+- **Settings & Adjustments**: בחירת מטבע (ברירת מחדל ‎ILS‎) וצבע נושא, קביעת שם העסק המופיע בכותרות, הגדרת מסדי הנתונים הפעילים (כולל בדיקת חיבור/יצירת סכימה לכל יעד), קוד PIN מנהל, עריכת רשומות משמרת מתוך הדוחות היומיים, וייצוא/ייבוא מלא של ההגדרות—all מהדפדפן.
 
 ## File Layout
 

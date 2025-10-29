@@ -221,6 +221,16 @@ class TimeEntryImport(BaseModel):
     manual: Optional[bool] = None
 
 
+class TimeEntryUpdate(BaseModel):
+    clock_in: Optional[dt.datetime] = None
+    clock_out: Optional[dt.datetime] = None
+    pin: str = Field(..., min_length=4, max_length=12)
+
+
+class TimeEntryDelete(BaseModel):
+    pin: str = Field(..., min_length=4, max_length=12)
+
+
 class EmployeesImportPayload(BaseModel):
     replace_existing: bool = False
     employees: list[EmployeeImport]

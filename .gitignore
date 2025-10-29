@@ -12,5 +12,6 @@ frontend/vite.log
 frontend/.cache/
 
 deploy/*.log
+.run/
 .env
 .venv/

@@ -67,6 +67,7 @@ else
 fi
 
 if [[ $INSTALL_MYSQL == true ]]; then
+  DB_SERVICE_STARTED=false
   if ! apt install -y mysql-server; then
     echo "[!] mysql-server package unavailable. Attempting to install default-mysql-server instead." >&2
     apt install -y default-mysql-server
@@ -75,15 +76,25 @@ if [[ $INSTALL_MYSQL == true ]]; then
     local svc=$1
     if command -v systemctl >/dev/null 2>&1; then
       if systemctl list-unit-files | grep -q "^${svc}.service"; then
-        if ! systemctl enable --now "$svc"; then
+        if systemctl enable --now "$svc"; then
+          DB_SERVICE_STARTED=true
+        else
           echo "[!] systemctl failed to start ${svc}. Attempting with 'service'." >&2
-          service "$svc" start || echo "[!] Please start ${svc} manually." >&2
+          if service "$svc" start; then
+            DB_SERVICE_STARTED=true
+          else
+            echo "[!] Please start ${svc} manually." >&2
+          fi
         fi
         return
       fi
     fi
     if command -v service >/dev/null 2>&1; then
-      service "$svc" start || echo "[!] Please start ${svc} manually." >&2
+      if service "$svc" start; then
+        DB_SERVICE_STARTED=true
+      else
+        echo "[!] Please start ${svc} manually." >&2
+      fi
     else
       echo "[!] Unable to control ${svc} (systemctl/service unavailable). Start it manually." >&2
     fi
@@ -95,6 +106,14 @@ if [[ $INSTALL_MYSQL == true ]]; then
     start_service mariadb
   else
     echo "[!] Unable to locate mysql.service or mariadb.service after installation. Please start MySQL manually." >&2
+  fi
+  if [[ $DB_SERVICE_STARTED == false ]]; then
+    cat <<'MYSQL_MANUAL'
+[!] MySQL/MariaDB service did not start automatically.
+    In constrained environments (containers without full systemd privileges) you can launch the daemon manually:
+        sudo ./scripts/manage_mysql_root.sh start
+    The helper starts mysqld directly as root and logs to /var/log/mysqld-root.log.
+MYSQL_MANUAL
   fi
 else
   echo "[i] Skipping MySQL installation. Ensure an accessible MySQL instance is available."
@@ -141,6 +160,12 @@ read -rp "Backend API base URL for the frontend [$frontend_api_default]: " front
 frontend_api=${frontend_api:-$frontend_api_default}
 set_env_value "$FRONTEND_ENV" "VITE_API_BASE_URL" "$frontend_api"
 
+frontend_host_default=$(get_env_value "VITE_DEV_HOST" "$FRONTEND_ENV")
+frontend_host_default=${frontend_host_default:-127.0.0.1}
+read -rp "Frontend dev server host [$frontend_host_default]: " frontend_host
+frontend_host=${frontend_host:-$frontend_host_default}
+set_env_value "$FRONTEND_ENV" "VITE_DEV_HOST" "$frontend_host"
+
 frontend_port_default=$(get_env_value "VITE_DEV_PORT" "$FRONTEND_ENV")
 frontend_port_default=${frontend_port_default:-5173}
 read -rp "Frontend dev server port [$frontend_port_default]: " frontend_port
@@ -150,7 +175,7 @@ set_env_value "$FRONTEND_ENV" "VITE_DEV_PORT" "$frontend_port"
 echo
 echo "Saved configuration:"
 echo "  backend/.env -> UVICORN_HOST=$backend_host, UVICORN_PORT=$backend_port"
-echo "  frontend/.env -> VITE_API_BASE_URL=$frontend_api, VITE_DEV_PORT=$frontend_port"
+echo "  frontend/.env -> VITE_API_BASE_URL=$frontend_api, VITE_DEV_HOST=$frontend_host, VITE_DEV_PORT=$frontend_port"
 
 if command -v mysql >/dev/null 2>&1; then
   read -rp "Create default HubClock database and user now? [y/N] " CREATE_DB

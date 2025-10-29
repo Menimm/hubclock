@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import datetime as dt
 from decimal import Decimal
 from pathlib import Path
@@ -27,6 +28,7 @@ settings = get_settings()
 app = FastAPI(title="HubClock API", version="0.1.0")
 SCHEMA_VERSION = 2
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+logger = logging.getLogger(__name__)
 
 DATABASE_TARGETS = {"primary", "secondary"}
 
@@ -261,14 +263,17 @@ def resolve_date_range(
 
 @app.on_event("startup")
 def ensure_engine():
-    get_engine()
+    try:
+        get_engine()
+    except (RuntimeError, OperationalError) as exc:
+        logger.warning("Database engine unavailable on startup: %s", exc)
 
 
 def _load_setting() -> Optional[Setting]:
     try:
         with session_scope() as session:
             return session.scalar(select(Setting))
-    except OperationalError:
+    except (OperationalError, RuntimeError):
         return None
 
 
@@ -279,6 +284,68 @@ def _normalize_overrides(payload: Optional[schemas.DBTestRequest]) -> Optional[s
     if not filtered:
         return None
     return schemas.DBTestRequest(**filtered)
+
+
+def _override_from_update(payload: schemas.SettingsUpdate) -> Optional[schemas.DBTestRequest]:
+    if all(
+        value is None
+        for value in (
+            payload.db_host,
+            payload.db_port,
+            payload.db_user,
+            payload.db_password,
+        )
+    ):
+        return None
+    return schemas.DBTestRequest(
+        db_host=payload.db_host,
+        db_port=payload.db_port,
+        db_user=payload.db_user,
+        db_password=payload.db_password,
+        target="primary",
+    )
+
+
+def _override_from_import(payload: schemas.SettingsImport) -> Optional[schemas.DBTestRequest]:
+    if all(
+        value is None
+        for value in (
+            payload.db_host,
+            payload.db_port,
+            payload.db_user,
+            payload.db_password,
+        )
+    ):
+        return None
+    return schemas.DBTestRequest(
+        db_host=payload.db_host,
+        db_port=payload.db_port,
+        db_user=payload.db_user,
+        db_password=payload.db_password,
+        target="primary",
+    )
+
+
+def _ensure_primary_connection(override: Optional[schemas.DBTestRequest]) -> None:
+    try:
+        ensure_legacy_schema(get_engine())
+        return
+    except (RuntimeError, OperationalError):
+        if not override:
+            raise HTTPException(
+                status_code=400,
+                detail="לא הוגדר חיבור למסד הנתונים. הזינו פרטי חיבור ושמרו שוב.",
+            )
+        try:
+            url = build_connection_url(None, override, target=override.target, require_active=False)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        configure_engines(url)
+        try:
+            ensure_legacy_schema(get_engine())
+        except OperationalError as exc:
+            detail = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
+            raise HTTPException(status_code=400, detail=detail)
 
 
 def _check_schema(engine) -> list[str]:
@@ -1007,29 +1074,55 @@ def export_summary_report(
 
 @app.get("/settings", response_model=schemas.SettingsOut)
 def get_settings_endpoint(db: Session = Depends(get_db)):
-    ensure_legacy_schema(get_engine())
-    setting = db.scalar(select(Setting))
-    if not setting:
+    schema_ok = False
+    setting: Optional[Setting] = None
+    try:
+        engine = get_engine()
+        ensure_legacy_schema(engine)
+        with session_scope() as session:
+            setting = session.scalar(select(Setting))
+            if not setting:
+                setting = Setting(
+                    currency="ILS",
+                    db_host=settings.mysql_host,
+                    db_port=settings.mysql_port,
+                    db_user=settings.mysql_user,
+                    db_password=settings.mysql_password,
+                    secondary_db_host=None,
+                    secondary_db_port=None,
+                    secondary_db_user=None,
+                    secondary_db_password=None,
+                    primary_database="primary",
+                    primary_db_active=True,
+                    secondary_db_active=False,
+                    schema_version=SCHEMA_VERSION,
+                    brand_name="העסק שלי",
+                    theme_color="#1b3aa6",
+                )
+                session.add(setting)
+                session.flush()
+        populate_setting_defaults(setting)
+        schema_ok = setting.schema_version == SCHEMA_VERSION
+    except (RuntimeError, OperationalError):
         setting = Setting(
             currency="ILS",
-            db_host=settings.mysql_host,
-            db_port=settings.mysql_port,
-            db_user=settings.mysql_user,
-            db_password=settings.mysql_password,
+            db_host=None,
+            db_port=None,
+            db_user=None,
+            db_password=None,
             secondary_db_host=None,
             secondary_db_port=None,
             secondary_db_user=None,
             secondary_db_password=None,
             primary_database="primary",
-            primary_db_active=True,
+            primary_db_active=False,
             secondary_db_active=False,
-            schema_version=SCHEMA_VERSION,
+            schema_version=0,
             brand_name="העסק שלי",
             theme_color="#1b3aa6",
         )
-        db.add(setting)
-        db.flush()
-    populate_setting_defaults(setting)
+        schema_ok = False
+
     return schemas.SettingsOut(
         currency=setting.currency,
         pin_set=bool(setting.pin_hash),
@@ -1045,23 +1138,16 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
         secondary_db_active=bool(setting.secondary_db_active),
         primary_database=setting.primary_database or "primary",
         schema_version=setting.schema_version,
-        schema_ok=setting.schema_version == SCHEMA_VERSION,
+        schema_ok=schema_ok,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
     )
 
 
 @app.put("/settings", response_model=schemas.SettingsOut)
-def update_settings(payload: schemas.SettingsUpdate, db: Session = Depends(get_db)):
-    ensure_legacy_schema(get_engine())
-    setting = db.scalar(select(Setting))
-    if not setting:
-        setting = Setting(currency="ILS")
-        db.add(setting)
-        db.flush()
-
-    if payload.currency:
-        setting.currency = payload.currency
+def update_settings(payload: schemas.SettingsUpdate):
+    override = _override_from_update(payload)
+    _ensure_primary_connection(override)
 
     def normalize(value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -1069,103 +1155,102 @@ def update_settings(payload: schemas.SettingsUpdate, db: Session = Depends(get_d
         trimmed = value.strip()
         return trimmed or None
 
-    if payload.db_host is not None:
-        setting.db_host = normalize(payload.db_host)
-    if payload.db_port is not None:
-        setting.db_port = payload.db_port
-    if payload.db_user is not None:
-        setting.db_user = normalize(payload.db_user)
-    if payload.db_password is not None:
-        setting.db_password = payload.db_password
-    if payload.secondary_db_host is not None:
-        setting.secondary_db_host = normalize(payload.secondary_db_host)
-    if payload.secondary_db_port is not None:
-        setting.secondary_db_port = payload.secondary_db_port
-    if payload.secondary_db_user is not None:
-        setting.secondary_db_user = normalize(payload.secondary_db_user)
-    if payload.secondary_db_password is not None:
-        setting.secondary_db_password = payload.secondary_db_password
-    if payload.primary_db_active is not None:
-        setting.primary_db_active = payload.primary_db_active
-    if payload.secondary_db_active is not None:
-        setting.secondary_db_active = payload.secondary_db_active
+    with session_scope() as session:
+        setting = session.scalar(select(Setting))
+        if not setting:
+            setting = Setting(currency="ILS")
+            session.add(setting)
+            session.flush()
 
-    if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
-        raise HTTPException(status_code=400, detail="יש להפעיל לפחות מסד נתונים אחד")
+        if payload.currency:
+            setting.currency = payload.currency
 
-    if payload.primary_database is not None:
-        if payload.primary_database not in DATABASE_TARGETS:
-            raise HTTPException(status_code=400, detail="בחירה לא תקינה של מסד נתונים ראשי")
-        setting.primary_database = payload.primary_database
+        if payload.db_host is not None:
+            setting.db_host = normalize(payload.db_host)
+        if payload.db_port is not None:
+            setting.db_port = payload.db_port
+        if payload.db_user is not None:
+            setting.db_user = normalize(payload.db_user)
+        if payload.db_password is not None:
+            setting.db_password = payload.db_password
+        if payload.secondary_db_host is not None:
+            setting.secondary_db_host = normalize(payload.secondary_db_host)
+        if payload.secondary_db_port is not None:
+            setting.secondary_db_port = payload.secondary_db_port
+        if payload.secondary_db_user is not None:
+            setting.secondary_db_user = normalize(payload.secondary_db_user)
+        if payload.secondary_db_password is not None:
+            setting.secondary_db_password = payload.secondary_db_password
+        if payload.primary_db_active is not None:
+            setting.primary_db_active = payload.primary_db_active
+        if payload.secondary_db_active is not None:
+            setting.secondary_db_active = payload.secondary_db_active
 
-    if payload.brand_name is not None:
-        setting.brand_name = payload.brand_name
-    if payload.theme_color is not None:
-        setting.theme_color = payload.theme_color
+        if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
+            raise HTTPException(status_code=400, detail="יש להפעיל לפחות מסד נתונים אחד")
 
-    if payload.new_pin:
-        if setting.pin_hash:
-            if not payload.current_pin:
-                raise HTTPException(status_code=400, detail="יש להזין PIN נוכחי כדי לעדכן")
-            if not verify_pin(payload.current_pin, setting.pin_hash):
-                raise HTTPException(status_code=403, detail="קוד ה-PIN הנוכחי שגוי")
-        setting.pin_hash = hash_pin(payload.new_pin)
+        if payload.primary_database is not None:
+            if payload.primary_database not in DATABASE_TARGETS:
+                raise HTTPException(status_code=400, detail="בחירה לא תקינה של מסד נתונים ראשי")
+            setting.primary_database = payload.primary_database
 
-    if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
-        raise HTTPException(status_code=400, detail="לא הוגדרו פרטי חיבור למסד הנתונים המשני")
+        if payload.brand_name is not None:
+            setting.brand_name = payload.brand_name
+        if payload.theme_color is not None:
+            setting.theme_color = payload.theme_color
 
-    db.flush()
-    populate_setting_defaults(setting)
-    try:
-        configure_from_setting(setting)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return schemas.SettingsOut(
-        currency=setting.currency,
-        pin_set=bool(setting.pin_hash),
-        db_host=setting.db_host,
-        db_port=setting.db_port,
-        db_user=setting.db_user,
-        db_password=setting.db_password,
-        secondary_db_host=setting.secondary_db_host,
-        secondary_db_port=setting.secondary_db_port,
-        secondary_db_user=setting.secondary_db_user,
-        secondary_db_password=setting.secondary_db_password,
-        primary_db_active=bool(setting.primary_db_active),
-        secondary_db_active=bool(setting.secondary_db_active),
-        primary_database=setting.primary_database or "primary",
-        schema_version=setting.schema_version,
-        schema_ok=setting.schema_version == SCHEMA_VERSION,
-        brand_name=setting.brand_name,
-        theme_color=setting.theme_color,
-    )
+        if payload.new_pin:
+            if setting.pin_hash:
+                if not payload.current_pin:
+                    raise HTTPException(status_code=400, detail="יש להזין PIN נוכחי כדי לעדכן")
+                if not verify_pin(payload.current_pin, setting.pin_hash):
+                    raise HTTPException(status_code=403, detail="קוד ה-PIN הנוכחי שגוי")
+            setting.pin_hash = hash_pin(payload.new_pin)
+
+        if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
+            raise HTTPException(status_code=400, detail="לא הוגדרו פרטי חיבור למסד הנתונים המשני")
+
+        populate_setting_defaults(setting)
+        try:
+            configure_from_setting(setting)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        schema_ok = setting.schema_version == SCHEMA_VERSION
+        session.flush()
+
+        return schemas.SettingsOut(
+            currency=setting.currency,
+            pin_set=bool(setting.pin_hash),
+            db_host=setting.db_host,
+            db_port=setting.db_port,
+            db_user=setting.db_user,
+            db_password=setting.db_password,
+            secondary_db_host=setting.secondary_db_host,
+            secondary_db_port=setting.secondary_db_port,
+            secondary_db_user=setting.secondary_db_user,
+            secondary_db_password=setting.secondary_db_password,
+            primary_db_active=bool(setting.primary_db_active),
+            secondary_db_active=bool(setting.secondary_db_active),
+            primary_database=setting.primary_database or "primary",
+            schema_version=setting.schema_version,
+            schema_ok=schema_ok,
+            brand_name=setting.brand_name,
+            theme_color=setting.theme_color,
+        )
 
 
 @app.get("/settings/export", response_model=schemas.SettingsExport)
 def export_settings(db: Session = Depends(get_db)):
-    ensure_legacy_schema(get_engine())
-    setting = db.scalar(select(Setting))
-    if not setting:
-        setting = Setting(
-            currency="ILS",
-            db_host=settings.mysql_host,
-            db_port=settings.mysql_port,
-            db_user=settings.mysql_user,
-            db_password=settings.mysql_password,
-            secondary_db_host=None,
-            secondary_db_port=None,
-            secondary_db_user=None,
-            secondary_db_password=None,
-            primary_database="primary",
-            primary_db_active=True,
-            secondary_db_active=False,
-            schema_version=SCHEMA_VERSION,
-            brand_name="העסק שלי",
-            theme_color="#1b3aa6",
-        )
-        db.add(setting)
-        db.flush()
-    populate_setting_defaults(setting)
+    try:
+        ensure_legacy_schema(get_engine())
+    except (RuntimeError, OperationalError):
+        raise HTTPException(status_code=400, detail="לא הוגדר חיבור למסד הנתונים לצורך ייצוא.")
+    with session_scope() as session:
+        setting = session.scalar(select(Setting))
+        if not setting:
+            raise HTTPException(status_code=400, detail="אין נתוני הגדרות לשמירה במסד הנתונים.")
+        populate_setting_defaults(setting)
     return schemas.SettingsExport(
         currency=setting.currency,
         db_host=setting.db_host,
@@ -1187,82 +1272,88 @@ def export_settings(db: Session = Depends(get_db)):
 
 
 @app.post("/settings/import", response_model=schemas.SettingsOut)
-def import_settings(payload: schemas.SettingsImport, db: Session = Depends(get_db)):
-    ensure_legacy_schema(get_engine())
-    setting = db.scalar(select(Setting))
-    if not setting:
-        setting = Setting(currency="ILS")
-        db.add(setting)
-        db.flush()
+def import_settings(payload: schemas.SettingsImport):
+    override = _override_from_import(payload)
+    _ensure_primary_connection(override)
 
-    if payload.currency is not None:
-        setting.currency = payload.currency
-    if payload.db_host is not None:
-        setting.db_host = payload.db_host.strip() if payload.db_host else None
-    if payload.db_port is not None:
-        setting.db_port = payload.db_port
-    if payload.db_user is not None:
-        setting.db_user = payload.db_user.strip() if payload.db_user else None
-    if payload.db_password is not None:
-        setting.db_password = payload.db_password
-    if payload.secondary_db_host is not None:
-        setting.secondary_db_host = payload.secondary_db_host.strip() if payload.secondary_db_host else None
-    if payload.secondary_db_port is not None:
-        setting.secondary_db_port = payload.secondary_db_port
-    if payload.secondary_db_user is not None:
-        setting.secondary_db_user = payload.secondary_db_user.strip() if payload.secondary_db_user else None
-    if payload.secondary_db_password is not None:
-        setting.secondary_db_password = payload.secondary_db_password
-    if payload.primary_db_active is not None:
-        setting.primary_db_active = payload.primary_db_active
-    if payload.secondary_db_active is not None:
-        setting.secondary_db_active = payload.secondary_db_active
-    if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
-        setting.primary_db_active = True
-        setting.secondary_db_active = False
+    with session_scope() as session:
+        setting = session.scalar(select(Setting))
+        if not setting:
+            setting = Setting(currency="ILS")
+            session.add(setting)
+            session.flush()
 
-    if payload.primary_database is not None and payload.primary_database in DATABASE_TARGETS:
-        setting.primary_database = payload.primary_database
-    if payload.schema_version is not None:
-        setting.schema_version = payload.schema_version
-    if payload.brand_name is not None:
-        setting.brand_name = payload.brand_name
-    if payload.theme_color is not None:
-        setting.theme_color = payload.theme_color
+        if payload.currency is not None:
+            setting.currency = payload.currency
+        if payload.db_host is not None:
+            setting.db_host = payload.db_host.strip() if payload.db_host else None
+        if payload.db_port is not None:
+            setting.db_port = payload.db_port
+        if payload.db_user is not None:
+            setting.db_user = payload.db_user.strip() if payload.db_user else None
+        if payload.db_password is not None:
+            setting.db_password = payload.db_password
+        if payload.secondary_db_host is not None:
+            setting.secondary_db_host = payload.secondary_db_host.strip() if payload.secondary_db_host else None
+        if payload.secondary_db_port is not None:
+            setting.secondary_db_port = payload.secondary_db_port
+        if payload.secondary_db_user is not None:
+            setting.secondary_db_user = payload.secondary_db_user.strip() if payload.secondary_db_user else None
+        if payload.secondary_db_password is not None:
+            setting.secondary_db_password = payload.secondary_db_password
+        if payload.primary_db_active is not None:
+            setting.primary_db_active = payload.primary_db_active
+        if payload.secondary_db_active is not None:
+            setting.secondary_db_active = payload.secondary_db_active
+        if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
+            setting.primary_db_active = True
+            setting.secondary_db_active = False
 
-    if payload.pin:
-        setting.pin_hash = hash_pin(payload.pin)
-    elif payload.pin_hash:
-        setting.pin_hash = payload.pin_hash
+        if payload.primary_database is not None and payload.primary_database in DATABASE_TARGETS:
+            setting.primary_database = payload.primary_database
+        if payload.schema_version is not None:
+            setting.schema_version = payload.schema_version
+        if payload.brand_name is not None:
+            setting.brand_name = payload.brand_name
+        if payload.theme_color is not None:
+            setting.theme_color = payload.theme_color
 
-    if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
-        setting.primary_database = "primary"
+        if payload.pin:
+            setting.pin_hash = hash_pin(payload.pin)
+        elif payload.pin_hash:
+            setting.pin_hash = payload.pin_hash
 
-    db.flush()
-    populate_setting_defaults(setting)
-    try:
-        configure_from_setting(setting)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return schemas.SettingsOut(
-        currency=setting.currency,
-        pin_set=bool(setting.pin_hash),
-        db_host=setting.db_host,
-        db_port=setting.db_port,
-        db_user=setting.db_user,
-        db_password=setting.db_password,
-        secondary_db_host=setting.secondary_db_host,
-        secondary_db_port=setting.secondary_db_port,
-        secondary_db_user=setting.secondary_db_user,
-        secondary_db_password=setting.secondary_db_password,
-        primary_db_active=bool(setting.primary_db_active),
-        secondary_db_active=bool(setting.secondary_db_active),
-        primary_database=setting.primary_database or "primary",
-        schema_version=setting.schema_version,
-        schema_ok=setting.schema_version == SCHEMA_VERSION,
-        brand_name=setting.brand_name,
-        theme_color=setting.theme_color,
-    )
+        if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
+            setting.primary_database = "primary"
+
+        populate_setting_defaults(setting)
+        try:
+            configure_from_setting(setting)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        schema_ok = setting.schema_version == SCHEMA_VERSION
+        session.flush()
+
+        return schemas.SettingsOut(
+            currency=setting.currency,
+            pin_set=bool(setting.pin_hash),
+            db_host=setting.db_host,
+            db_port=setting.db_port,
+            db_user=setting.db_user,
+            db_password=setting.db_password,
+            secondary_db_host=setting.secondary_db_host,
+            secondary_db_port=setting.secondary_db_port,
+            secondary_db_user=setting.secondary_db_user,
+            secondary_db_password=setting.secondary_db_password,
+            primary_db_active=bool(setting.primary_db_active),
+            secondary_db_active=bool(setting.secondary_db_active),
+            primary_database=setting.primary_database or "primary",
+            schema_version=setting.schema_version,
+            schema_ok=schema_ok,
+            brand_name=setting.brand_name,
+            theme_color=setting.theme_color,
+        )
 
 
 @app.post("/auth/verify-pin", response_model=schemas.PinVerifyResponse)

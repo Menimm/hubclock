@@ -15,7 +15,11 @@ HubClock is a small-footprint time tracking kiosk for neighborhood shops, delis,
    ```bash
    ./scripts/install_mysql.sh
    ```
-   The script prints instructions for macOS (Homebrew) and Ubuntu (APT). Create a database and user once MySQL is running:
+   On Ubuntu/Debian VMs you can run the full bootstrap instead:
+   ```bash
+   sudo ./scripts/setup_ubuntu.sh
+   ```
+   The wizard installs Python/Node, prompts for backend/frontend hosts and ports, and (optionally) provisions MySQL or MariaDB. Create a database and user once MySQL is running:
    ```sql
    CREATE DATABASE hubclock CHARACTER SET utf8mb4;
    CREATE USER 'hubclock'@'localhost' IDENTIFIED BY 'hubclock';
@@ -43,7 +47,11 @@ HubClock is a small-footprint time tracking kiosk for neighborhood shops, delis,
    make backend-run
    make frontend-run
    ```
-   Visit http://localhost:5173.
+   or launch both with:
+   ```bash
+   ./scripts/manage_dev_services.sh start
+   ```
+   Visit http://localhost:5173 (host/port follow your `.env` choices).
 
 5. **Bootstrap the schema**
    - Use **Settings → Database Utilities** to run "Test DB Connection" and "Create/Update Schema".
@@ -88,7 +96,7 @@ scripts/
 - Use MySQL’s timezone-aware configuration (`DEFAULT_TIME_ZONE='+00:00'`) to avoid DST surprises.
 - Run reports regularly and export data by copying table results if payroll needs archival outside the app.
 - The frontend reads `VITE_API_BASE_URL` (or `window.__HUBCLOCK_API_BASE__` at runtime) to know where the backend lives. By default it points to `http://127.0.0.1:8000`; set it to `/api` if you proxy requests through a web server.
-- `VITE_DEV_PORT` in `frontend/.env` controls the Vite dev server port used by `scripts/start_frontend.sh`. If you change it, reinstall the dev services (`sudo ./scripts/install_services.sh --dev`) or pass the port manually when running `npm run dev` from `frontend/`.
+- `VITE_DEV_HOST` / `VITE_DEV_PORT` in `frontend/.env` control the Vite dev server binding used by `scripts/start_frontend.sh`. If you change them, reinstall the dev services (`sudo ./scripts/install_services.sh --dev`) or pass the host/port manually when running `npm run dev` from `frontend/`.
 - When running the Vite dev server manually, invoke it from the `frontend/` folder (e.g. `npm run dev -- --host 0.0.0.0 --port 5173`) or use `npm --prefix frontend run dev …` from the repo root.
 - Use **Settings → מסדי נתונים** לבדיקת חיבור לכל יעד (`בדיקת חיבור ראשי/משני`) ולהגדרת היעד עבור יצירת סכימה (`מסדי נתונים פעילים`, `ראשי`, `משני`, או `שני המסדים`).
 - אם מתקבלת התרעה על גרסת סכימה מיושנת, הריצו את "יצירת/עדכון סכימה" (בטאב ההגדרות) כך שהסכמה תעודכן ויכולות חדשות כמו עריכת משמרות יפעלו.
@@ -98,12 +106,11 @@ scripts/
 
 ```bash
 sudo ./scripts/setup_ubuntu.sh
-sudo ./scripts/install_services.sh
-sudo systemctl start hubclock-backend.service
-sudo systemctl start hubclock-frontend.service
+sudo ./scripts/install_services.sh --dev
+./scripts/manage_dev_services.sh start   # uses systemd when available, otherwise background jobs
 ```
 
-Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. Frontend listens on the `VITE_DEV_PORT` value (default 5173) and the backend on `UVICORN_PORT` (default 8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
+Services run under the invoking user by default; adjust the systemd unit files in `deploy/` if you prefer a dedicated account. When systemd isn’t available (e.g., minimal containers), the management script falls back to background processes spawned from `scripts/start_backend.sh` / `scripts/start_frontend.sh`. Frontend listens on the `VITE_DEV_HOST:VITE_DEV_PORT` values (defaults 127.0.0.1:5173) and the backend on `UVICORN_HOST:UVICORN_PORT` (defaults 0.0.0.0:8000). Remember to configure MySQL credentials in `backend/.env` and run `curl -X POST http://127.0.0.1:8000/db/init` once after provisioning.
 
 To install the development services (backend w/ auto-reload + Vite dev server), run:
 
@@ -124,6 +131,29 @@ For quick management of the dev services, use:
 ```bash
 ./scripts/manage_dev_services.sh start|stop|restart|status
 ```
+
+If systemd refuses to start MySQL/MariaDB (common in root-only containers), launch it directly as root:
+
+```bash
+sudo ./scripts/manage_mysql_root.sh start
+```
+
+Logs live in `/var/log/mysqld-root.log`; stop/status are available via the same helper.
+
+### Production Update Procedure
+
+1. Pull the latest code: `git pull`.
+2. Rebuild frontend assets and reinstall the production service:
+   ```bash
+   npm --prefix frontend install
+   npm --prefix frontend run build
+   sudo ./scripts/install_services.sh --production
+   ```
+3. Apply database migrations via the UI (**Settings → יצירת/עדכון סכימה**) or:
+   ```bash
+   curl -X POST http://127.0.0.1:8000/db/init
+   ```
+4. Restart the backend service: `sudo systemctl restart hubclock-backend.service`.
 
 ## Docker
 

@@ -11,8 +11,8 @@ import { SettingsProvider } from "./context/SettingsContext";
 
 const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <SettingsProvider>
+    <SettingsProvider>
+      <AuthProvider>
         <Navigation />
         <main className="container">
           <Routes>
@@ -44,8 +44,8 @@ const App: React.FC = () => {
             <Route path="*" element={<ClockPage />} />
           </Routes>
         </main>
-      </SettingsProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </SettingsProvider>
   );
 };
 

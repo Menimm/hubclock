@@ -40,7 +40,7 @@ HubClock is a small-footprint time tracking kiosk for neighborhood shops, delis,
    make backend-setup
    make frontend-setup
    ```
-   The helper scripts create the virtualenv, install Python packages, and fetch Node modules.
+   The helper scripts create the virtualenv, install Python packages, fetch Node modules, and can launch the dev servers immediately if you opt in at the end of each run.
 
 4. **Start the services**
    ```bash
@@ -154,6 +154,10 @@ Logs live in `/var/log/mysqld-root.log`; stop/status are available via the same 
    curl -X POST http://127.0.0.1:8000/db/init
    ```
 4. Restart the backend service: `sudo systemctl restart hubclock-backend.service`.
+
+### Quick PIN Check
+
+Both `scripts/setup_ubuntu.sh` and the individual setup scripts can now run a quick `curl` against `/auth/verify-pin`. Provide the PIN you expect to use and the helper will confirm connectivity (or surface the API error) right after the services start.
 
 ## Docker
 

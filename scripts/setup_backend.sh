@@ -6,6 +6,8 @@ cd "$PROJECT_ROOT"
 
 ENV_FILE="$PROJECT_ROOT/backend/.env"
 ENV_TEMPLATE="$PROJECT_ROOT/backend/.env.example"
+RUN_DIR="$PROJECT_ROOT/.run"
+mkdir -p "$RUN_DIR"
 
 get_env_value() {
   local key=$1
@@ -76,3 +78,15 @@ echo "  UVICORN_HOST=$backend_host"
 echo "  UVICORN_PORT=$backend_port"
 
 echo "Backend environment ready. Activate with: source backend/.venv/bin/activate"
+
+read -rp "Start backend dev server now? [y/N] " START_BACKEND
+if [[ ${START_BACKEND:-N} =~ ^[Yy]$ ]]; then
+  BACKEND_LOG="$RUN_DIR/backend.log"
+  echo "[i] Launching backend dev server in background (logs: $BACKEND_LOG)"
+  set +e
+  nohup bash "$PROJECT_ROOT/scripts/start_backend.sh" >"$BACKEND_LOG" 2>&1 &
+  pid=$!
+  set -e
+  echo "$pid" >"$RUN_DIR/backend.pid"
+  echo "[✓] Backend dev server started (PID $pid)."
+fi

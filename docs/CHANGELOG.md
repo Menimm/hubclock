@@ -12,13 +12,14 @@
 - `scripts/manage_dev_services.sh` קיבל ניהול מלא של הסטאק גם בסביבות ללא systemd (ריצת רקע + לוגים ב-`.run/`).
 - `scripts/manage_mysql_root.sh` מאפשר להרים את mysqld ישירות כ-root בתצורות מצומצמות.
 - `scripts/run_backend_service.sh` טען את ה-virtualenv וה-`.env` עבור שירותי systemd (dev/production).
+- סקריפטי ההגדרה (backend/front/Ubuntu) מציעים כעת להפעיל את השירותים מיד ולהריץ בדיקת `curl` עבור `/auth/verify-pin`.
 
 ### Changed
 - מסלולי `/db/test` ו-`/db/init` תומכים בפרמטר `target` (primary/secondary/both/active) ומחזירים הודעות מפורטות לפי היעד.
 - פורמט הייצוא/ייבוא של ההגדרות כולל את דגלי הפעילות, פרטי החיבור המשני, והבחירה במסד הראשי.
 - backend לא קורס יותר בשלב האתחול כאשר אין חיבור למסד נתונים — האפליקציה עולה ומאפשרת להגדיר חיבור דרך ה-UI בלבד.
 - יחידות systemd לבקאנד משתמשות מעתה בסקריפט השירות החדש (כדי למשוך את ההגדרות מקובץ ה-`.env`).
-- `scripts/setup_ubuntu.sh` מעדכן אינטראקטיבית גם את `VITE_DEV_HOST`, מוסיף הודעת fallback להפעלת MySQL כ-root, ומסכם את הערכים החדשים.
+- `scripts/setup_ubuntu.sh` מעדכן אינטראקטיבית גם את `VITE_DEV_HOST`, מוסיף הודעת fallback להפעלת MySQL כ-root, מסכם את הערכים החדשים, ומזהה כתובות IPv4 מקומיות להצעת ברירות מחדל נגישות.
 
 ### Fixed
 - קריסת uvicorn בעת `startup` ללא מסד נתונים עצרה את השירות על Ubuntu; כעת נרשמת אזהרה והשרת ממשיך לפעול.

@@ -6,6 +6,8 @@ cd "$PROJECT_ROOT/frontend"
 
 CACHE_DIR="$PROJECT_ROOT/.cache/npm"
 mkdir -p "$CACHE_DIR"
+RUN_DIR="$PROJECT_ROOT/.run"
+mkdir -p "$RUN_DIR"
 
 npm_config_cache="$CACHE_DIR" npm install
 
@@ -71,3 +73,15 @@ echo "  VITE_API_BASE_URL=$api_base"
 echo "  VITE_DEV_PORT=$dev_port"
 
 echo "Frontend dependencies installed. Start dev server with: npm run dev"
+
+read -rp "Start frontend dev server now? [y/N] " START_FRONTEND
+if [[ ${START_FRONTEND:-N} =~ ^[Yy]$ ]]; then
+  FRONTEND_LOG="$RUN_DIR/frontend.log"
+  echo "[i] Launching frontend dev server in background (logs: $FRONTEND_LOG)"
+  set +e
+  nohup bash "$PROJECT_ROOT/scripts/start_frontend.sh" >"$FRONTEND_LOG" 2>&1 &
+  pid=$!
+  set -e
+  echo "$pid" >"$RUN_DIR/frontend.pid"
+  echo "[✓] Frontend dev server started (PID $pid)."
+fi

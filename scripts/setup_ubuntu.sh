@@ -235,6 +235,54 @@ else
 MYSQL_NOTE
 fi
 
+services_started=false
+read -rp "Start HubClock dev services now? [y/N] " START_SERVICES
+if [[ ${START_SERVICES:-N} =~ ^[Yy]$ ]]; then
+  set +e
+  "$PROJECT_ROOT/scripts/manage_dev_services.sh" start
+  rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    services_started=true
+    echo "[i] Services started. Use ./scripts/manage_dev_services.sh status for details."
+  else
+    echo "[!] Failed to start services automatically. See logs under $PROJECT_ROOT/.run/."
+  fi
+fi
+
+test_host=$backend_host
+if [[ "$test_host" == "0.0.0.0" || "$test_host" == "127.0.0.1" ]]; then
+  if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
+    test_host=${IPV4_CANDIDATES[0]}
+  else
+    test_host=127.0.0.1
+  fi
+fi
+
+read -rp "Test admin PIN verification endpoint at http://$test_host:$backend_port/auth/verify-pin now? [y/N] " TEST_PIN
+if [[ ${TEST_PIN:-N} =~ ^[Yy]$ ]]; then
+  read -rsp "Enter PIN to test (input hidden): " PIN_INPUT
+  echo
+  tmp_response=$(mktemp)
+  set +e
+  http_status=$(curl -sS -o "$tmp_response" -w "%{http_code}" \
+    -X POST "http://$test_host:$backend_port/auth/verify-pin" \
+    -H "Content-Type: application/json" \
+    -d "{\"pin\":\"$PIN_INPUT\"}")
+  curl_rc=$?
+  set -e
+  if [[ $curl_rc -ne 0 ]]; then
+    echo "[!] curl failed (backend may be offline): see output below."
+  else
+    if [[ $http_status -eq 200 ]]; then
+      echo "[✓] PIN verified successfully."
+    else
+      echo "[i] Endpoint responded with HTTP $http_status: $(cat "$tmp_response")"
+    fi
+  fi
+  rm -f "$tmp_response"
+fi
+
 cat <<INSTRUCTIONS
 HubClock setup complete.
 

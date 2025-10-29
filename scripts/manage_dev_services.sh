@@ -35,9 +35,10 @@ start_process() {
     rm -f "$pid_file"
   fi
 
-  nohup bash "$script_path" >"$log_file" 2>&1 &
-  echo $! >"$pid_file"
-  echo "[i] Started $(basename "$pid_file" .pid) (logs: $log_file)"
+  nohup setsid bash "$script_path" >"$log_file" 2>&1 &
+  local pid=$!
+  echo "$pid" >"$pid_file"
+  echo "[i] Started $(basename "$pid_file" .pid) (PID $pid, logs: $log_file)"
 }
 
 stop_process() {
@@ -49,7 +50,7 @@ stop_process() {
   local pid
   pid=$(cat "$pid_file")
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || true
+    kill -TERM -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
     echo "[i] Stopped $(basename "$pid_file" .pid)"
   else

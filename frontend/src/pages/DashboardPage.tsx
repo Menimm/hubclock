@@ -105,6 +105,16 @@ const DashboardPage: React.FC = () => {
     [currency]
   );
 
+  const formatDeviceId = (deviceId?: string | null) => {
+    if (!deviceId) {
+      return "לא זמין";
+    }
+    if (deviceId === "unknown-device") {
+      return "מכשיר לא מזוהה";
+    }
+    return deviceId;
+  };
+
   useEffect(() => {
     const loadEmployees = async () => {
       try {
@@ -473,7 +483,9 @@ const DashboardPage: React.FC = () => {
                               format(new Date(shift.clock_in), "HH:mm", { locale: he })
                             )}
                               </td>
-                              <td>{shift.clock_in_device_id ?? ""}</td>
+                              <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
+                                {formatDeviceId(shift.clock_in_device_id)}
+                              </td>
                               <td>
                                 {isEditing ? (
                                   <input
@@ -486,7 +498,9 @@ const DashboardPage: React.FC = () => {
                               format(new Date(shift.clock_out), "HH:mm", { locale: he })
                             )}
                               </td>
-                              <td>{shift.clock_out_device_id ?? ""}</td>
+                              <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
+                                {formatDeviceId(shift.clock_out_device_id)}
+                              </td>
                               <td>{durationPreview}</td>
                           <td>
                             {isEditing ? (

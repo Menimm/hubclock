@@ -21,6 +21,7 @@ interface SettingsResponse {
   schema_ok: boolean | null;
   brand_name: string | null;
   theme_color: string | null;
+  show_clock_device_ids: boolean | null;
 }
 
 interface Settings {
@@ -41,6 +42,7 @@ interface Settings {
   schema_ok: boolean;
   brand_name: string;
   theme_color: string;
+  show_clock_device_ids: boolean;
 }
 
 interface SettingsContextValue extends Settings {
@@ -68,7 +70,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     schema_version: 0,
     schema_ok: true,
     brand_name: "העסק שלי",
-    theme_color: "#1b3aa6"
+    theme_color: "#1b3aa6",
+    show_clock_device_ids: true
   });
 
   const load = useCallback(async () => {
@@ -91,7 +94,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       schema_version: response.data.schema_version ?? prev.schema_version,
       schema_ok: response.data.schema_ok ?? prev.schema_ok,
       brand_name: response.data.brand_name ?? "העסק שלי",
-      theme_color: response.data.theme_color ?? "#1b3aa6"
+      theme_color: response.data.theme_color ?? "#1b3aa6",
+      show_clock_device_ids: response.data.show_clock_device_ids ?? prev.show_clock_device_ids
     }));
   }, []);
 

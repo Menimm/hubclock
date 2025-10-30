@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 logger = logging.getLogger(__name__)
 
@@ -210,6 +210,7 @@ def ensure_legacy_schema(engine) -> None:
                 "primary_database": "ALTER TABLE settings ADD COLUMN primary_database VARCHAR(16)",
                 "primary_db_active": "ALTER TABLE settings ADD COLUMN primary_db_active BOOLEAN NOT NULL DEFAULT 1",
                 "secondary_db_active": "ALTER TABLE settings ADD COLUMN secondary_db_active BOOLEAN NOT NULL DEFAULT 0",
+                "show_clock_device_ids": "ALTER TABLE settings ADD COLUMN show_clock_device_ids BOOLEAN NOT NULL DEFAULT 1",
                 "schema_version": "ALTER TABLE settings ADD COLUMN schema_version INT NOT NULL DEFAULT 1",
             }
             for column, ddl in alterations.items():
@@ -243,6 +244,8 @@ def populate_setting_defaults(setting: Setting) -> None:
         setting.primary_db_active = True
     if setting.secondary_db_active is None:
         setting.secondary_db_active = False
+    if setting.show_clock_device_ids is None:
+        setting.show_clock_device_ids = True
     if setting.schema_version is None:
         setting.schema_version = SCHEMA_VERSION
 
@@ -538,6 +541,7 @@ def create_database_schema(target: str = "active"):
                         primary_database=current_setting.primary_database if current_setting and current_setting.primary_database in DATABASE_TARGETS else determine_primary_label(current_setting),
                         primary_db_active=current_setting.primary_db_active if current_setting else True,
                         secondary_db_active=current_setting.secondary_db_active if current_setting else False,
+                        show_clock_device_ids=current_setting.show_clock_device_ids if current_setting else True,
                         schema_version=SCHEMA_VERSION,
                     )
                     populate_setting_defaults(new_setting)
@@ -883,6 +887,10 @@ def clock_status(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
 @api_router.get("/clock/active", response_model=list[schemas.ActiveShift])
 def list_active_shifts(db: Session = Depends(get_db)):
     now = dt.datetime.now()
+    setting = db.scalar(select(Setting))
+    show_devices = True
+    if setting is not None and setting.show_clock_device_ids is not None:
+        show_devices = setting.show_clock_device_ids
     entries = db.execute(
         select(TimeEntry, Employee)
         .join(Employee)
@@ -897,10 +905,9 @@ def list_active_shifts(db: Session = Depends(get_db)):
             schemas.ActiveShift(
                 employee_id=employee.id,
                 full_name=employee.full_name,
-                id_number=employee.id_number,
                 clock_in=entry.clock_in,
                 elapsed_minutes=minutes,
-                clock_in_device_id=entry.clock_in_device_id,
+                clock_in_device_id=entry.clock_in_device_id if show_devices else None,
             )
         )
     return response
@@ -1050,10 +1057,14 @@ def generate_daily_report(
     include_device_ids: bool = True,
     db: Session = Depends(get_db),
 ):
+    setting = db.scalar(select(Setting))
+    effective_include_devices = include_device_ids
+    if setting is not None and not setting.show_clock_device_ids:
+        effective_include_devices = False
     range_start, range_end, employees_response = _collect_daily_report(
         db, month, start, end, employee_id
     )
-    if not include_device_ids:
+    if not effective_include_devices:
         masked_employees: list[schemas.DailyEmployeeReport] = []
         for employee in employees_response:
             masked_shifts = [
@@ -1096,6 +1107,10 @@ def export_daily_report(
     include_device_ids: bool = True,
     db: Session = Depends(get_db),
 ):
+    setting = db.scalar(select(Setting))
+    effective_include_devices = include_device_ids
+    if setting is not None and not setting.show_clock_device_ids:
+        effective_include_devices = False
     range_start, range_end, employees_response = _collect_daily_report(
         db, month, start, end, employee_id
     )
@@ -1112,7 +1127,7 @@ def export_daily_report(
         "End Time",
         "Total Hours (HH:MM)",
     ]
-    if include_device_ids:
+    if effective_include_devices:
         headers.extend(["Clock-in Device", "Clock-out Device"])
     if include_payments:
         headers.append("Estimated Pay")
@@ -1132,7 +1147,7 @@ def export_daily_report(
                 shift.clock_out.strftime("%H:%M"),
                 total_hours,
             ]
-            if include_device_ids:
+            if effective_include_devices:
                 row.extend([shift.clock_in_device_id or "", shift.clock_out_device_id or ""])
             if include_payments:
                 row.append(shift.estimated_pay)
@@ -1223,6 +1238,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
                     primary_database="primary",
                     primary_db_active=True,
                     secondary_db_active=False,
+                    show_clock_device_ids=True,
                     schema_version=SCHEMA_VERSION,
                     brand_name="העסק שלי",
                     theme_color="#1b3aa6",
@@ -1245,6 +1261,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
             primary_database="primary",
             primary_db_active=False,
             secondary_db_active=False,
+            show_clock_device_ids=True,
             schema_version=0,
             brand_name="העסק שלי",
             theme_color="#1b3aa6",
@@ -1269,6 +1286,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
         schema_ok=schema_ok,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
+        show_clock_device_ids=bool(setting.show_clock_device_ids),
     )
 
 
@@ -1326,6 +1344,8 @@ def update_settings(payload: schemas.SettingsUpdate):
             setting.brand_name = payload.brand_name
         if payload.theme_color is not None:
             setting.theme_color = payload.theme_color
+        if payload.show_clock_device_ids is not None:
+            setting.show_clock_device_ids = payload.show_clock_device_ids
 
         if payload.new_pin:
             if setting.pin_hash:
@@ -1365,6 +1385,7 @@ def update_settings(payload: schemas.SettingsUpdate):
             schema_ok=schema_ok,
             brand_name=setting.brand_name,
             theme_color=setting.theme_color,
+            show_clock_device_ids=bool(setting.show_clock_device_ids),
         )
 
 
@@ -1396,6 +1417,7 @@ def export_settings(db: Session = Depends(get_db)):
         pin_hash=setting.pin_hash,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
+        show_clock_device_ids=bool(setting.show_clock_device_ids),
     )
 
 
@@ -1445,6 +1467,8 @@ def import_settings(payload: schemas.SettingsImport):
             setting.brand_name = payload.brand_name
         if payload.theme_color is not None:
             setting.theme_color = payload.theme_color
+        if payload.show_clock_device_ids is not None:
+            setting.show_clock_device_ids = payload.show_clock_device_ids
 
         if payload.pin:
             setting.pin_hash = hash_pin(payload.pin)
@@ -1481,6 +1505,7 @@ def import_settings(payload: schemas.SettingsImport):
             schema_ok=schema_ok,
             brand_name=setting.brand_name,
             theme_color=setting.theme_color,
+            show_clock_device_ids=bool(setting.show_clock_device_ids),
         )
 
 

@@ -31,6 +31,7 @@ const SettingsPage: React.FC = () => {
     schema_version,
     brand_name,
     theme_color: themeColorSetting,
+    show_clock_device_ids,
     refresh,
     setLocal
   } = useSettings();
@@ -48,6 +49,7 @@ const SettingsPage: React.FC = () => {
   const [primaryChoice, setPrimaryChoice] = useState<"primary" | "secondary">(primary_database ?? "primary");
   const [brandName, setBrandName] = useState(brand_name ?? "העסק שלי");
   const [themeColor, setThemeColor] = useState(themeColorSetting ?? "#1b3aa6");
+  const [showClockDevices, setShowClockDevices] = useState<boolean>(show_clock_device_ids ?? true);
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [generalStatus, setGeneralStatus] = useState<StatusMessage>(null);
@@ -58,8 +60,7 @@ const SettingsPage: React.FC = () => {
   const [showPrimaryPassword, setShowPrimaryPassword] = useState(false);
   const [showSecondaryPassword, setShowSecondaryPassword] = useState(false);
   const [schemaTarget, setSchemaTarget] = useState<SchemaTarget>("active");
-
-useEffect(() => {
+  useEffect(() => {
     setCurrencyValue(currency);
   }, [currency]);
 
@@ -77,6 +78,7 @@ useEffect(() => {
     setPrimaryChoice(primary_database ?? "primary");
     setBrandName(brand_name ?? "העסק שלי");
     setThemeColor(themeColorSetting ?? "#1b3aa6");
+    setShowClockDevices(show_clock_device_ids ?? true);
   }, [
     db_host,
     db_port,
@@ -90,7 +92,8 @@ useEffect(() => {
     secondary_db_active,
     primary_database,
     brand_name,
-    themeColorSetting
+    themeColorSetting,
+    show_clock_device_ids
   ]);
 
   const updateAppearance = async (event: React.FormEvent) => {
@@ -100,10 +103,16 @@ useEffect(() => {
       await api.put("/settings", {
         currency: currencyValue,
         theme_color: themeColor,
-        brand_name: brandName
+        brand_name: brandName,
+        show_clock_device_ids: showClockDevices
       });
       setGeneralStatus({ kind: "success", message: "ההגדרות נשמרו" });
-      setLocal({ currency: currencyValue, theme_color: themeColor, brand_name: brandName });
+      setLocal({
+        currency: currencyValue,
+        theme_color: themeColor,
+        brand_name: brandName,
+        show_clock_device_ids: showClockDevices
+      });
     } catch (error) {
       setGeneralStatus({ kind: "error", message: formatApiError(error) });
     }
@@ -173,7 +182,8 @@ useEffect(() => {
         secondary_db_active: secondaryActive,
         primary_database: primaryChoice,
         schema_ok: response.data.schema_ok ?? schema_ok,
-        schema_version: response.data.schema_version ?? schema_version
+        schema_version: response.data.schema_version ?? schema_version,
+        show_clock_device_ids: response.data.show_clock_device_ids ?? show_clock_device_ids
       });
     } catch (error) {
       setDbStatus({ kind: "error", message: formatApiError(error) });
@@ -337,6 +347,26 @@ useEffect(() => {
             <button className="primary" type="submit">
               שמירת ההגדרות
             </button>
+          </div>
+          <div
+            style={{
+              flexBasis: "100%",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginTop: "0.75rem",
+              whiteSpace: "nowrap"
+            }}
+          >
+            <input
+              id="showClockDevices"
+              type="checkbox"
+              checked={showClockDevices}
+              onChange={(event) => setShowClockDevices(event.target.checked)}
+            />
+            <label htmlFor="showClockDevices" style={{ fontWeight: 500, cursor: "pointer" }}>
+              להציג מזהי מכשיר במסכי השעון והרשימות החיות
+            </label>
           </div>
         </form>
       </section>

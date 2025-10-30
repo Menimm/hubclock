@@ -51,7 +51,6 @@ class ClockRequest(BaseModel):
 class ActiveShift(BaseModel):
     employee_id: int
     full_name: str
-    id_number: Optional[str] = None
     clock_in: dt.datetime
     elapsed_minutes: int
     clock_in_device_id: Optional[str] = None
@@ -150,6 +149,7 @@ class SettingsOut(BaseModel):
     schema_ok: bool
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
+    show_clock_device_ids: bool = True
 
 
 class SettingsUpdate(BaseModel):
@@ -169,6 +169,7 @@ class SettingsUpdate(BaseModel):
     secondary_db_active: Optional[bool] = None
     brand_name: Optional[str] = Field(None, max_length=120)
     theme_color: Optional[str] = Field(None, max_length=16)
+    show_clock_device_ids: Optional[bool] = None
 
 
 class DBTestResponse(BaseModel):
@@ -211,6 +212,7 @@ class SettingsExport(BaseModel):
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
+    show_clock_device_ids: Optional[bool] = None
 
 
 class SettingsImport(BaseModel):
@@ -231,6 +233,7 @@ class SettingsImport(BaseModel):
     pin_hash: Optional[str] = None
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
+    show_clock_device_ids: Optional[bool] = None
 
 
 class EmployeeImport(BaseModel):

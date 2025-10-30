@@ -74,7 +74,7 @@ const formatSecondsToHHMM = (seconds: number): string => {
 };
 
 const DashboardPage: React.FC = () => {
-  const { currency, schema_ok } = useSettings();
+  const { currency, schema_ok, show_clock_device_ids: showClockDeviceSetting } = useSettings();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [mode, setMode] = useState<Mode>("month");
   const [reportType, setReportType] = useState<ReportType>("summary");
@@ -92,7 +92,7 @@ const DashboardPage: React.FC = () => {
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [includePayments, setIncludePayments] = useState(false);
-  const [includeDeviceIds, setIncludeDeviceIds] = useState(true);
+  const [includeDeviceIds, setIncludeDeviceIds] = useState<boolean>(showClockDeviceSetting ?? true);
   const [pinModal, setPinModal] = useState<PinModalConfig | null>(null);
   const [pinValue, setPinValue] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -127,6 +127,14 @@ const DashboardPage: React.FC = () => {
     };
     loadEmployees();
   }, []);
+
+  useEffect(() => {
+    if (showClockDeviceSetting === false) {
+      setIncludeDeviceIds(false);
+    } else if (showClockDeviceSetting === true) {
+      setIncludeDeviceIds(true);
+    }
+  }, [showClockDeviceSetting]);
 
   const filters = useMemo(() => {
     const params = new URLSearchParams();
@@ -647,23 +655,25 @@ const DashboardPage: React.FC = () => {
             />
             לכלול חישובי שכר בקובץ
           </label>
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.4rem",
-              marginTop: "1rem",
-              flexWrap: "nowrap",
-              whiteSpace: "nowrap"
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={includeDeviceIds}
-              onChange={(event) => setIncludeDeviceIds(event.target.checked)}
-            />
-            להציג מזהי מכשירים בדוח
-          </label>
+          {showClockDeviceSetting && (
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                marginTop: "1rem",
+                flexWrap: "nowrap",
+                whiteSpace: "nowrap"
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={includeDeviceIds}
+                onChange={(event) => setIncludeDeviceIds(event.target.checked)}
+              />
+              להציג מזהי מכשירים בדוח
+            </label>
+          )}
         </div>
       </div>
 

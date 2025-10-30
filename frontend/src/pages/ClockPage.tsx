@@ -3,6 +3,7 @@ import { api, formatApiError } from "../api/client";
 import { differenceInMinutes, format } from "date-fns";
 import { he } from "date-fns/locale";
 import { getDeviceId } from "../utils/deviceId";
+import { useSettings } from "../context/SettingsContext";
 
 type ActiveShift = {
   employee_id: number;
@@ -31,6 +32,8 @@ const formatMinutes = (minutes: number) => {
 };
 
 const ClockPage: React.FC = () => {
+  const { show_clock_device_ids: showClockDeviceIdsSetting } = useSettings();
+  const showDeviceColumns = showClockDeviceIdsSetting ?? true;
   const [employeeCode, setEmployeeCode] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusKind, setStatusKind] = useState<StatusKind>(null);
@@ -161,45 +164,47 @@ const ClockPage: React.FC = () => {
     <div className="card">
       <h2>שעון נוכחות</h2>
       <p>הקלידו את מספר העובד כדי לפתוח או לסגור משמרת. המספר מוסתר לשמירה על פרטיות.</p>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "0.5rem",
-          margin: "1rem 0",
-          padding: "0.6rem 0.9rem",
-          borderRadius: "8px",
-          backgroundColor: "#eef2ff",
-          color: "#1e3a8a",
-          fontWeight: 500
-        }}
-      >
-        <span>
-          מזהה המכשיר הנוכחי:&nbsp;
-          <code style={{ direction: "ltr" }}>
-            {deviceId && deviceId !== "unknown-device" ? deviceId : "לא זמין"}
-          </code>
-        </span>
-        {deviceId && deviceId !== "unknown-device" ? (
-          <button
-            type="button"
-            className="secondary"
-            style={{ padding: "0.15rem 0.6rem", fontSize: "0.85rem" }}
-            onClick={() => {
-              void navigator.clipboard.writeText(deviceId).catch(() => {
-                window.prompt("העתקה לא הצליחה אוטומטית. העתיקו את המזהה ידנית:", deviceId);
-              });
-            }}
-          >
-            העתקה
-          </button>
-        ) : (
-          <span style={{ fontSize: "0.85rem" }}>
-            אם אינכם רואים מזהה, וודאו שהדפדפן מאפשר שימוש בעוגיות/LocalStorage.
+      {showDeviceColumns && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "0.5rem",
+            margin: "1rem 0",
+            padding: "0.6rem 0.9rem",
+            borderRadius: "8px",
+            backgroundColor: "#eef2ff",
+            color: "#1e3a8a",
+            fontWeight: 500
+          }}
+        >
+          <span>
+            מזהה המכשיר הנוכחי:&nbsp;
+            <code style={{ direction: "ltr" }}>
+              {deviceId && deviceId !== "unknown-device" ? deviceId : "לא זמין"}
+            </code>
           </span>
-        )}
-      </div>
+          {deviceId && deviceId !== "unknown-device" ? (
+            <button
+              type="button"
+              className="secondary"
+              style={{ padding: "0.15rem 0.6rem", fontSize: "0.85rem" }}
+              onClick={() => {
+                void navigator.clipboard.writeText(deviceId).catch(() => {
+                  window.prompt("העתקה לא הצליחה אוטומטית. העתיקו את המזהה ידנית:", deviceId);
+                });
+              }}
+            >
+              העתקה
+            </button>
+          ) : (
+            <span style={{ fontSize: "0.85rem" }}>
+              אם אינכם רואים מזהה, וודאו שהדפדפן מאפשר שימוש בעוגיות/LocalStorage.
+            </span>
+          )}
+        </div>
+      )}
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <label htmlFor="employeeCode">מספר עובד</label>
@@ -233,13 +238,13 @@ const ClockPage: React.FC = () => {
           <p>אין עובדים במשמרת כרגע.</p>
         ) : (
           <div className="table-wrapper" style={{ maxHeight: "420px", overflowY: "auto" }}>
-            <table className="table" style={{ minWidth: "680px" }}>
+            <table className="table" style={{ minWidth: showDeviceColumns ? "660px" : "520px" }}>
               <thead>
                 <tr>
                   <th>שם העובד</th>
                   <th>שעת כניסה</th>
                   <th>משך משמרת</th>
-                  <th>מכשיר</th>
+                  {showDeviceColumns && <th>מכשיר</th>}
                 </tr>
               </thead>
               <tbody>
@@ -249,9 +254,11 @@ const ClockPage: React.FC = () => {
                   return (
                     <tr key={shift.employee_id}>
                       <td>{shift.full_name}</td>
-                      <td>{format(clockInDate, "dd.MM.yyyy HH:mm", { locale: he })}</td>
+                      <td>{format(clockInDate, "HH:mm", { locale: he })}</td>
                       <td>{formatMinutes(duration)}</td>
-                      <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>{shift.clock_in_device_id ?? ""}</td>
+                      {showDeviceColumns && (
+                        <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>{shift.clock_in_device_id ?? ""}</td>
+                      )}
                     </tr>
                   );
                 })}

@@ -40,7 +40,7 @@ HubClock is a small-footprint time tracking kiosk for neighborhood shops, delis,
    make backend-setup
    make frontend-setup
    ```
-   The helper scripts create the virtualenv, install Python packages, fetch Node modules, and can launch the dev servers immediately if you opt in at the end of each run.
+   The helper scripts create the virtualenv, install Python packages, fetch Node modules, and offer to build the production bundle and launch the dev servers immediately if you opt in at the end of each run.
 
 4. **Start the services**
    ```bash

@@ -101,6 +101,13 @@ echo "Frontend configuration saved to frontend/.env:"
 echo "  VITE_API_BASE_URL=$api_base"
 echo "  VITE_DEV_PORT=$dev_port"
 
+read -rp "Build production bundle now? [y/N] " BUILD_FRONTEND
+if [[ ${BUILD_FRONTEND:-N} =~ ^[Yy]$ ]]; then
+  echo "[i] Building frontend production bundle..."
+  npm run build
+  echo "[✓] Production assets available under frontend/dist/"
+fi
+
 echo "Frontend dependencies installed. Start dev server with: npm run dev"
 
 read -rp "Start frontend dev server now? [y/N] " START_FRONTEND

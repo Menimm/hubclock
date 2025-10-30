@@ -16,7 +16,7 @@
   - Production (backend serving built frontend): `sudo ./scripts/install_services.sh --production`
 - Docker image builder: `./scripts/build_docker.sh [tag]`
 - `scripts/setup_backend.sh` creates/updates `backend/.env` and prompts for `UVICORN_HOST` / `UVICORN_PORT`.
-- `scripts/setup_frontend.sh` creates/updates `frontend/.env` and prompts for `VITE_API_BASE_URL`, `VITE_DEV_HOST`, and `VITE_DEV_PORT`.
+- `scripts/setup_frontend.sh` creates/updates `frontend/.env`, prompts for `VITE_API_BASE_URL`, `VITE_DEV_HOST`, and `VITE_DEV_PORT`, and can build the production bundle on demand.
 - `scripts/setup_ubuntu.sh` runs the same prompts after dependency installation so remote deployments match the local flow.
 
 ## Database

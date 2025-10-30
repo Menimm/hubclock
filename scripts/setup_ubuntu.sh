@@ -215,6 +215,13 @@ echo "Saved configuration:"
 echo "  backend/.env -> UVICORN_HOST=$backend_host, UVICORN_PORT=$backend_port"
 echo "  frontend/.env -> VITE_API_BASE_URL=$frontend_api, VITE_DEV_HOST=$frontend_host, VITE_DEV_PORT=$frontend_port"
 
+read -rp "Build frontend production bundle now? [y/N] " BUILD_BUNDLE
+if [[ ${BUILD_BUNDLE:-N} =~ ^[Yy]$ ]]; then
+  echo "[i] Building frontend production bundle..."
+  npm --prefix "$PROJECT_ROOT/frontend" run build
+  echo "[✓] frontend/dist refreshed."
+fi
+
 if command -v mysql >/dev/null 2>&1; then
   read -rp "Create default HubClock database and user now? [y/N] " CREATE_DB
   if [[ ${CREATE_DB:-N} =~ ^[Yy]$ ]]; then

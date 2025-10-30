@@ -156,7 +156,7 @@ Logs live in `/var/log/mysqld-root.log`; stop/status are available via the same 
 
 ### Serve Everything on Port 80
 
-Run the Ubuntu setup script with the Nginx option (`Install and configure Nginx reverse proxy on port 80? -> y`). The helper installs Nginx, lets you set the public HTTP port, writes `/etc/nginx/sites-available/hubclock.conf`, proxies traffic to the backend, and can switch you to the production backend service (which serves the built frontend from `frontend/dist`). After choosing the production option you only need the selected port exposed—Nginx forwards API and static requests to the backend on port 8000.
+Run the Ubuntu setup script with the Nginx option (`Install and configure Nginx reverse proxy on port 80? -> y`). The helper installs Nginx, lets you set the public HTTP port, writes `/etc/nginx/sites-available/hubclock.conf`, and creates a split proxy: `location /api/` forwards API calls to FastAPI, while `location /` proxies everything else (the built frontend). You can optionally switch to the production backend service (which serves the built frontend from `frontend/dist`). After choosing the production option you only need the selected port exposed—Nginx forwards API and static requests to the backend on port 8000.
 
 If your DNS already points to the VM, answer `y` to the "Request Let's Encrypt SSL certificates" prompt to have Certbot obtain and configure HTTPS automatically. The script temporarily binds port 80 for the ACME challenge, then asks which HTTPS port you’d like (default 443) and rewrites the config accordingly. Certificates live under `/etc/letsencrypt/live/<hostname>/`, and Nginx is reloaded with the SSL-ready config.
 

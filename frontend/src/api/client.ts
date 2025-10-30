@@ -17,12 +17,19 @@ const resolveBaseUrl = (): string => {
     }
   }
 
-  return base;
+  return base.replace(/\/$/, "");
 };
 
 export const api = axios.create({
   baseURL: resolveBaseUrl(),
   timeout: 8000
+});
+
+api.interceptors.request.use((config) => {
+  if (config.url && config.url.startsWith("/") && !config.url.startsWith("//")) {
+    config.url = config.url.slice(1);
+  }
+  return config;
 });
 
 export function formatApiError(error: unknown): string {

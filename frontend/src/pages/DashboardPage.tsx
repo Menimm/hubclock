@@ -34,6 +34,8 @@ interface DailyShift {
   duration_minutes: number;
   hourly_rate: number;
   estimated_pay: number;
+  clock_in_device_id?: string | null;
+  clock_out_device_id?: string | null;
 }
 
 interface DailyEmployeeReport {
@@ -433,7 +435,9 @@ const DashboardPage: React.FC = () => {
                     <tr>
                       <th>תאריך</th>
                       <th>כניסה</th>
+                      <th>מכשיר כניסה</th>
                       <th>יציאה</th>
+                      <th>מכשיר יציאה</th>
                       <th>משך (HH:MM)</th>
                       <th style={{ minWidth: "160px" }}>פעולות</th>
                     </tr>
@@ -454,11 +458,11 @@ const DashboardPage: React.FC = () => {
                         }
                       }
 
-                      return (
-                        <tr key={shift.entry_id} style={isEditing ? { background: "#eef2ff" } : undefined}>
-                          <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
-                          <td>
-                            {isEditing ? (
+                          return (
+                            <tr key={shift.entry_id} style={isEditing ? { background: "#eef2ff" } : undefined}>
+                              <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
+                              <td>
+                                {isEditing ? (
                               <input
                                 type="datetime-local"
                                 value={editClockIn}
@@ -468,20 +472,22 @@ const DashboardPage: React.FC = () => {
                             ) : (
                               format(new Date(shift.clock_in), "HH:mm", { locale: he })
                             )}
-                          </td>
-                          <td>
-                            {isEditing ? (
-                              <input
-                                type="datetime-local"
-                                value={editClockOut}
+                              </td>
+                              <td>{shift.clock_in_device_id ?? ""}</td>
+                              <td>
+                                {isEditing ? (
+                                  <input
+                                    type="datetime-local"
+                                    value={editClockOut}
                                 onChange={(event) => setEditClockOut(event.target.value)}
                                 style={{ minWidth: "200px" }}
                               />
                             ) : (
                               format(new Date(shift.clock_out), "HH:mm", { locale: he })
                             )}
-                          </td>
-                          <td>{durationPreview}</td>
+                              </td>
+                              <td>{shift.clock_out_device_id ?? ""}</td>
+                              <td>{durationPreview}</td>
                           <td>
                             {isEditing ? (
                               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>

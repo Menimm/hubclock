@@ -13,6 +13,7 @@
 - `scripts/manage_mysql_root.sh` מאפשר להרים את mysqld ישירות כ-root בתצורות מצומצמות.
 - `scripts/run_backend_service.sh` טען את ה-virtualenv וה-`.env` עבור שירותי systemd (dev/production).
 - שדה מזהה מספרי חדש לכל עובד (כולל תמיכה בייבוא/ייצוא, דוחות, וייצוא לאקסל).
+- זיהוי מכשיר (device_id) לכל כניסה/יציאה נרשם בטבלאות, בתגובות ה-API, ובדוחות (כולל Excel) כדי לעקוב אחר העמדה שבה עובדים משתמשים.
 - סקריפטי ההגדרה (backend/front/Ubuntu) מציעים כעת להפעיל את השירותים מיד ולהריץ בדיקת `curl` עבור `/auth/verify-pin`.
 
 ### Changed

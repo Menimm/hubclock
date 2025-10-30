@@ -36,6 +36,8 @@ class TimeEntry(Base):
     clock_in: Mapped[dt.datetime] = mapped_column(DateTime(timezone=False), nullable=False)
     clock_out: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=False))
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    clock_in_device_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    clock_out_device_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     employee: Mapped[Employee] = relationship("Employee", back_populates="entries")
 
@@ -67,4 +69,4 @@ class Setting(Base):
     primary_database: Mapped[Optional[str]] = mapped_column(String(16), default="primary")
     primary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     secondary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=4)

@@ -45,6 +45,7 @@ class EmployeeOut(EmployeeBase):
 
 class ClockRequest(BaseModel):
     employee_code: str = Field(..., max_length=32)
+    device_id: Optional[str] = Field(None, max_length=64)
 
 
 class ActiveShift(BaseModel):
@@ -53,12 +54,15 @@ class ActiveShift(BaseModel):
     id_number: Optional[str] = None
     clock_in: dt.datetime
     elapsed_minutes: int
+    clock_in_device_id: Optional[str] = None
 
 
 class ClockResponse(BaseModel):
     status: str
     message: str
     entry_id: Optional[int] = None
+    device_id: Optional[str] = None
+    device_match: Optional[bool] = None
 
 
 class ClockStatus(BaseModel):
@@ -111,6 +115,8 @@ class DailyShiftRow(BaseModel):
     duration_minutes: int
     hourly_rate: Decimal
     estimated_pay: float
+    clock_in_device_id: Optional[str] = None
+    clock_out_device_id: Optional[str] = None
 
 
 class DailyEmployeeReport(BaseModel):
@@ -240,6 +246,8 @@ class TimeEntryImport(BaseModel):
     clock_in: dt.datetime
     clock_out: Optional[dt.datetime] = None
     manual: Optional[bool] = None
+    clock_in_device_id: Optional[str] = None
+    clock_out_device_id: Optional[str] = None
 
 
 class TimeEntryUpdate(BaseModel):

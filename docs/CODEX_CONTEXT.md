@@ -7,6 +7,7 @@ This document captures the current state of the HubClock project so future Codex
 - Clock-in/out: employees enter their code (masked) on a Hebrew, mobile-friendly interface with a single toggle button and live-updating list of active shifts.
 - Employees module: admin manages full name, employee code, external ID (`id_number`, numeric string with leading zeros), hourly rate, active flag; can add manual shifts; supports JSON import/export of employees and time entries.
 - Dashboard: monthly/custom summaries and detailed daily reports per employee with shift editing/deletion (PIN re-auth), Excel exports (daily + summary) with optional wage columns; daily exports include individual shift rows.
+- Device tracking: each kiosk saves a persistent device UUID in localStorage; backend stores `clock_in_device_id` / `clock_out_device_id` on `time_entries`. Daily reports and Excel exports show the device IDs, and clocking-out responses flag when the device differs from the one used at check-in.
 - Settings: configure business name, currency (default ILS), theme color, admin PIN, DB connection parameters (primary/secondary MySQL), theme + name applied globally; includes DB test/init, settings import/export.
 - UX/Security: admin routes PIN-gated; PIN input hidden; verification endpoint works even before DB setup. Reports and active shift lists show employee IDs.
 
@@ -41,6 +42,7 @@ This document captures the current state of the HubClock project so future Codex
 - Certbot integration assumes port 80 is temporarily available for HTTP-01 validation.
 - Hebrew localisation is pervasive; keep new UI labels/messages in Hebrew to maintain consistency.
 - Clock-in/out must remain a masked, single-button flow; employee codes are distinct from `id_number` (government ID), so do not swap their roles.
+- New device identifiers are stored per entry; keep `/clock` requests sending the `device_id` so analytics remain accurate.
 
 ## Last Session Summary (2025-10-29)
 - API prefixed with `/api`.

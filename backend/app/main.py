@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,10 @@ def ensure_legacy_schema(engine) -> None:
                         "CHANGE manual is_manual BOOLEAN NOT NULL DEFAULT 0"
                     )
                 )
+            if "clock_in_device_id" not in columns:
+                conn.execute(text("ALTER TABLE time_entries ADD COLUMN clock_in_device_id VARCHAR(64)"))
+            if "clock_out_device_id" not in columns:
+                conn.execute(text("ALTER TABLE time_entries ADD COLUMN clock_out_device_id VARCHAR(64)"))
         if "settings" in table_names:
             columns = {col["name"] for col in inspector.get_columns("settings")}
             alterations = {
@@ -623,6 +627,8 @@ def export_employees(db: Session = Depends(get_db)):
                 "clock_in": entry.clock_in.isoformat(),
                 "clock_out": entry.clock_out.isoformat() if entry.clock_out else None,
                 "manual": entry.is_manual,
+                "clock_in_device_id": entry.clock_in_device_id,
+                "clock_out_device_id": entry.clock_out_device_id,
             }
         )
 
@@ -683,6 +689,8 @@ def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depe
             clock_in=clock_in,
             clock_out=clock_out,
             is_manual=entry.manual if entry.manual is not None else False,
+            clock_in_device_id=entry.clock_in_device_id,
+            clock_out_device_id=entry.clock_out_device_id,
         )
         db.add(new_entry)
 
@@ -814,12 +822,25 @@ def clock_in(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
             status="already_in",
             message=f"{employee.full_name} כבר במשמרת פעילה",
             entry_id=open_entry.id,
+            device_id=open_entry.clock_in_device_id,
+            device_match=(payload.device_id == open_entry.clock_in_device_id if payload.device_id and open_entry.clock_in_device_id else None),
         )
     now = dt.datetime.now()
-    entry = TimeEntry(employee=employee, clock_in=now, is_manual=False)
+    entry = TimeEntry(
+        employee=employee,
+        clock_in=now,
+        is_manual=False,
+        clock_in_device_id=payload.device_id,
+    )
     db.add(entry)
     db.flush()
-    return schemas.ClockResponse(status="clocked_in", message="הכניסה נרשמה בהצלחה", entry_id=entry.id)
+    return schemas.ClockResponse(
+        status="clocked_in",
+        message="הכניסה נרשמה בהצלחה",
+        entry_id=entry.id,
+        device_id=payload.device_id,
+        device_match=True,
+    )
 
 
 @api_router.post("/clock/out", response_model=schemas.ClockResponse)
@@ -836,8 +857,18 @@ def clock_out(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
             message=f"{employee.full_name} אינו במשמרת פעילה",
         )
     open_entry.clock_out = dt.datetime.now()
+    open_entry.clock_out_device_id = payload.device_id
+    device_match: Optional[bool] = None
+    if payload.device_id and open_entry.clock_in_device_id:
+        device_match = payload.device_id == open_entry.clock_in_device_id
     db.flush()
-    return schemas.ClockResponse(status="clocked_out", message="היציאה נרשמה בהצלחה", entry_id=open_entry.id)
+    return schemas.ClockResponse(
+        status="clocked_out",
+        message="היציאה נרשמה בהצלחה",
+        entry_id=open_entry.id,
+        device_id=payload.device_id,
+        device_match=device_match,
+    )
 
 
 @api_router.post("/clock/status", response_model=schemas.ClockStatus)
@@ -869,6 +900,7 @@ def list_active_shifts(db: Session = Depends(get_db)):
                 id_number=employee.id_number,
                 clock_in=entry.clock_in,
                 elapsed_minutes=minutes,
+                clock_in_device_id=entry.clock_in_device_id,
             )
         )
     return response
@@ -987,6 +1019,8 @@ def _collect_daily_report(
                 duration_minutes=minutes,
                 hourly_rate=rate,
                 estimated_pay=estimated_pay,
+                clock_in_device_id=entry.clock_in_device_id,
+                clock_out_device_id=entry.clock_out_device_id,
             )
         )
 
@@ -1041,7 +1075,17 @@ def export_daily_report(
     wb = Workbook()
     ws = wb.active
     ws.title = "Daily Report"
-    headers = ["Employee ID", "Employee", "Start Date", "Start Time", "End Date", "End Time", "Total Hours (HH:MM)"]
+    headers = [
+        "Employee ID",
+        "Employee",
+        "Clock-in Device",
+        "Clock-out Device",
+        "Start Date",
+        "Start Time",
+        "End Date",
+        "End Time",
+        "Total Hours (HH:MM)",
+    ]
     if include_payments:
         headers.append("Estimated Pay")
     ws.append(headers)
@@ -1054,6 +1098,8 @@ def export_daily_report(
             row = [
                 employee.id_number or "",
                 employee.full_name,
+                shift.clock_in_device_id or "",
+                shift.clock_out_device_id or "",
                 start_date,
                 shift.clock_in.strftime("%H:%M"),
                 end_date,

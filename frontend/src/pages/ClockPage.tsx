@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, formatApiError } from "../api/client";
 import { differenceInMinutes, format } from "date-fns";
 import { he } from "date-fns/locale";
+import { getDeviceId } from "../utils/deviceId";
 
 type ActiveShift = {
   employee_id: number;
@@ -9,6 +10,7 @@ type ActiveShift = {
   id_number?: string | null;
   clock_in: string;
   elapsed_minutes: number;
+  clock_in_device_id?: string | null;
 };
 
 type StatusKind = "success" | "error" | null;
@@ -17,6 +19,8 @@ type ClockResponse = {
   status: string;
   message: string;
   entry_id?: number;
+  device_id?: string | null;
+  device_match?: boolean | null;
 };
 
 const formatMinutes = (minutes: number) => {
@@ -34,6 +38,11 @@ const ClockPage: React.FC = () => {
   const [activeShifts, setActiveShifts] = useState<ActiveShift[]>([]);
   const [isClockedIn, setIsClockedIn] = useState<boolean | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const deviceIdRef = useRef<string>(typeof window !== "undefined" ? getDeviceId() : "unknown-device");
+
+  useEffect(() => {
+    deviceIdRef.current = getDeviceId();
+  }, []);
 
   const loadActive = async (silent = false) => {
     try {
@@ -59,7 +68,8 @@ const ClockPage: React.FC = () => {
         setCheckingStatus(true);
       }
       const response = await api.post<{ is_clocked_in: boolean }>("/clock/status", {
-        employee_code: code
+        employee_code: code,
+        device_id: deviceIdRef.current
       });
       if (code === employeeCode.trim()) {
         setIsClockedIn(response.data.is_clocked_in);
@@ -116,7 +126,10 @@ const ClockPage: React.FC = () => {
       }
 
       const endpoint = currentState ? "/clock/out" : "/clock/in";
-      const response = await api.post<ClockResponse>(endpoint, { employee_code: trimmed });
+      const response = await api.post<ClockResponse>(endpoint, {
+        employee_code: trimmed,
+        device_id: deviceIdRef.current
+      });
 
       const stateMap: Record<string, boolean> = {
         clocked_in: true,
@@ -128,8 +141,12 @@ const ClockPage: React.FC = () => {
         setIsClockedIn(stateMap[response.data.status]);
       }
 
+      let successMessage = response.data.message;
+      if (response.data.device_match === false) {
+        successMessage += " (המכשיר שונה מזה שבו התחילה המשמרת)";
+      }
       setStatusKind("success");
-      setStatusMessage(response.data.message);
+      setStatusMessage(successMessage);
       setEmployeeCode("");
       await loadActive(true);
     } catch (error) {
@@ -175,11 +192,12 @@ const ClockPage: React.FC = () => {
           <p>אין עובדים במשמרת כרגע.</p>
         ) : (
           <div className="table-wrapper" style={{ maxHeight: "420px", overflowY: "auto" }}>
-            <table className="table" style={{ minWidth: "620px" }}>
+            <table className="table" style={{ minWidth: "720px" }}>
               <thead>
                 <tr>
                   <th>שם העובד</th>
                   <th>מספר ת"ז</th>
+                  <th>מכשיר</th>
                   <th>שעת כניסה</th>
                   <th>משך משמרת</th>
                 </tr>
@@ -192,6 +210,7 @@ const ClockPage: React.FC = () => {
                     <tr key={shift.employee_id}>
                       <td>{shift.full_name}</td>
                       <td>{shift.id_number ?? ""}</td>
+                      <td>{shift.clock_in_device_id ?? ""}</td>
                       <td>{format(clockInDate, "dd.MM.yyyy HH:mm", { locale: he })}</td>
                       <td>{formatMinutes(duration)}</td>
                     </tr>

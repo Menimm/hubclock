@@ -13,10 +13,10 @@ frontend-run:
 	./scripts/start_frontend.sh
 
 db-init:
-	curl -sS -X POST http://127.0.0.1:8000/db/init | jq .
+	curl -sS -X POST http://127.0.0.1:8000/api/db/init | jq .
 
 db-test:
-	curl -sS http://127.0.0.1:8000/db/test | jq .
+	curl -sS http://127.0.0.1:8000/api/db/test | jq .
 
 clean:
 	rm -rf backend/.venv frontend/node_modules

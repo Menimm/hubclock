@@ -259,14 +259,14 @@ if [[ "$test_host" == "0.0.0.0" || "$test_host" == "127.0.0.1" ]]; then
   fi
 fi
 
-read -rp "Test admin PIN verification endpoint at http://$test_host:$backend_port/auth/verify-pin now? [y/N] " TEST_PIN
+read -rp "Test admin PIN verification endpoint at http://$test_host:$backend_port/api/auth/verify-pin now? [y/N] " TEST_PIN
 if [[ ${TEST_PIN:-N} =~ ^[Yy]$ ]]; then
   read -rsp "Enter PIN to test (input hidden): " PIN_INPUT
   echo
   tmp_response=$(mktemp)
   set +e
   http_status=$(curl -sS -o "$tmp_response" -w "%{http_code}" \
-    -X POST "http://$test_host:$backend_port/auth/verify-pin" \
+    -X POST "http://$test_host:$backend_port/api/auth/verify-pin" \
     -H "Content-Type: application/json" \
     -d "{\"pin\":\"$PIN_INPUT\"}")
   curl_rc=$?
@@ -369,7 +369,7 @@ Next steps:
   - Configure backend credentials in backend/.env if you change defaults.
   - Generate schema once:
        PYTHONPATH=$PROJECT_ROOT/backend $PROJECT_ROOT/backend/.venv/bin/uvicorn app.main:app --host $backend_host --port $backend_port
-       curl -X POST http://127.0.0.1:$backend_port/db/init
+      curl -X POST http://127.0.0.1:$backend_port/api/db/init
   - Frontend dev server listens on port $frontend_port (from frontend/.env).
     Run it with: npm run dev -- --host 127.0.0.1 --port $frontend_port
 INSTRUCTIONS

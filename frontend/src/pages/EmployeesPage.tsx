@@ -167,7 +167,7 @@ const EmployeesPage: React.FC = () => {
             />
           </div>
           <div>
-            <label htmlFor="idNumber">מספר מזהה</label>
+            <label htmlFor="idNumber">מספר ת"ז</label>
             <input
               id="idNumber"
               value={form.id_number ?? ""}
@@ -206,7 +206,7 @@ const EmployeesPage: React.FC = () => {
               <tr>
                 <th>שם</th>
                 <th>מספר עובד</th>
-                <th>מספר מזהה</th>
+                <th>מספר ת"ז</th>
                 <th>שכר שעתי</th>
                 <th>סטטוס</th>
                 <th>פעולות</th>

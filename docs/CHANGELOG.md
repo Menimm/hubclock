@@ -16,7 +16,8 @@
 - סקריפטי ההגדרה (backend/front/Ubuntu) מציעים כעת להפעיל את השירותים מיד ולהריץ בדיקת `curl` עבור `/auth/verify-pin`.
 
 ### Changed
-- מסלולי `/db/test` ו-`/db/init` תומכים בפרמטר `target` (primary/secondary/both/active) ומחזירים הודעות מפורטות לפי היעד.
+- מסלולי `/api/db/test` ו-`/api/db/init` תומכים בפרמטר `target` (primary/secondary/both/active) ומחזירים הודעות מפורטות לפי היעד.
+- כל נקודות ה-API גלויות כעת תחת הנתיב `/api/...`, כדי לאפשר פרוקסי אחיד יחד עם הגשת ה-frontend מאותו פורט.
 - פורמט הייצוא/ייבוא של ההגדרות כולל את דגלי הפעילות, פרטי החיבור המשני, והבחירה במסד הראשי.
 - backend לא קורס יותר בשלב האתחול כאשר אין חיבור למסד נתונים — האפליקציה עולה ומאפשרת להגדיר חיבור דרך ה-UI בלבד.
 - יחידות systemd לבקאנד משתמשות מעתה בסקריפט השירות החדש (כדי למשוך את ההגדרות מקובץ ה-`.env`).
@@ -45,5 +46,5 @@
 - Shift duration calculation now uses local timestamps, preventing immediate "02:00" duration after clock-in.
 
 ### Notes
-- After pulling the latest changes, run `curl -X POST http://127.0.0.1:8000/db/init` once to add new columns.
+- After pulling the latest changes, run `curl -X POST http://127.0.0.1:8000/api/db/init` once to add new columns.
 - Theme color is stored as hex and surfaces across header/badges/buttons via CSS variable.

@@ -362,7 +362,7 @@ const DashboardPage: React.FC = () => {
             <thead>
               <tr>
                 <th>שם העובד</th>
-                <th>מספר מזהה</th>
+                <th>מספר ת"ז</th>
                 <th>סה"כ שעות</th>
                 <th>שכר שעתי</th>
                 <th>שכר משוער</th>
@@ -422,7 +422,7 @@ const DashboardPage: React.FC = () => {
                 <div>
                   <h4 style={{ margin: 0 }}>{employee.full_name}</h4>
                   {employee.id_number && (
-                    <div style={{ fontSize: "0.85rem", color: "#475467" }}>מספר מזהה: {employee.id_number}</div>
+                    <div style={{ fontSize: "0.85rem", color: "#475467" }}>מספר ת"ז: {employee.id_number}</div>
                   )}
                 </div>
                 <span style={{ fontSize: "0.9rem", color: "#475467" }}>{employee.shifts.length} משמרות</span>

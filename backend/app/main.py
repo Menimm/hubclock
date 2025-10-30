@@ -10,7 +10,7 @@ from collections import defaultdict
 from io import BytesIO
 from urllib.parse import quote_plus
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +27,7 @@ from .security import hash_pin, verify_pin
 
 settings = get_settings()
 app = FastAPI(title="HubClock API", version="0.1.0")
+api_router = APIRouter()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -435,7 +436,7 @@ def _run_connection_test(overrides: Optional[schemas.DBTestRequest]) -> schemas.
     )
 
 
-@app.get("/db/test", response_model=schemas.DBTestResponse)
+@api_router.get("/db/test", response_model=schemas.DBTestResponse)
 def test_database_connection_get(
     db_host: Optional[str] = None,
     db_port: Optional[int] = None,
@@ -455,13 +456,13 @@ def test_database_connection_get(
     return _run_connection_test(overrides)
 
 
-@app.post("/db/test", response_model=schemas.DBTestResponse)
+@api_router.post("/db/test", response_model=schemas.DBTestResponse)
 def test_database_connection_post(payload: schemas.DBTestRequest):
     overrides = _normalize_overrides(payload)
     return _run_connection_test(overrides)
 
 
-@app.post("/db/init", response_model=schemas.DBTestResponse)
+@api_router.post("/db/init", response_model=schemas.DBTestResponse)
 def create_database_schema(target: str = "active"):
     valid_targets = {"primary", "secondary", "both", "active"}
     if target not in valid_targets:
@@ -564,13 +565,13 @@ def create_database_schema(target: str = "active"):
     return schemas.DBTestResponse(ok=success, message=joined_message)
 
 
-@app.get("/employees", response_model=list[schemas.EmployeeOut])
+@api_router.get("/employees", response_model=list[schemas.EmployeeOut])
 def list_employees(db: Session = Depends(get_db)):
     employees = db.scalars(select(Employee).order_by(Employee.full_name)).all()
     return employees
 
 
-@app.post("/employees", response_model=schemas.EmployeeOut, status_code=status.HTTP_201_CREATED)
+@api_router.post("/employees", response_model=schemas.EmployeeOut, status_code=status.HTTP_201_CREATED)
 def create_employee(payload: schemas.EmployeeCreate, db: Session = Depends(get_db)):
     employee = Employee(
         full_name=payload.full_name,
@@ -595,7 +596,7 @@ def create_employee(payload: schemas.EmployeeCreate, db: Session = Depends(get_d
     return employee
 
 
-@app.get("/employees/export")
+@api_router.get("/employees/export")
 def export_employees(db: Session = Depends(get_db)):
     employees = db.scalars(select(Employee).order_by(Employee.full_name)).all()
     employee_payload = [
@@ -628,7 +629,7 @@ def export_employees(db: Session = Depends(get_db)):
     return {"employees": employee_payload, "time_entries": entry_payload}
 
 
-@app.post("/employees/import")
+@api_router.post("/employees/import")
 def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depends(get_db)):
     if payload.replace_existing:
         db.execute(delete(TimeEntry))
@@ -689,7 +690,7 @@ def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depe
     return {"employees": len(code_to_employee), "time_entries": len(payload.time_entries)}
 
 
-@app.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
+@api_router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
 def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db)):
     employee = db.get(Employee, employee_id)
     if not employee:
@@ -723,7 +724,7 @@ def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Sessi
     return employee
 
 
-@app.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+@api_router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_employee(employee_id: int, db: Session = Depends(get_db)):
     employee = db.get(Employee, employee_id)
     if not employee:
@@ -732,7 +733,7 @@ def delete_employee(employee_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post("/employees/{employee_id}/entries", response_model=schemas.ManualEntryOut, status_code=status.HTTP_201_CREATED)
+@api_router.post("/employees/{employee_id}/entries", response_model=schemas.ManualEntryOut, status_code=status.HTTP_201_CREATED)
 def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: Session = Depends(get_db)):
     employee = db.get(Employee, employee_id)
     if not employee:
@@ -745,7 +746,7 @@ def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: S
     return entry
     
 
-@app.put("/time-entries/{entry_id}", response_model=schemas.ManualEntryOut)
+@api_router.put("/time-entries/{entry_id}", response_model=schemas.ManualEntryOut)
 def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Session = Depends(get_db)):
     if not payload.pin:
         raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
@@ -782,7 +783,7 @@ def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Sessi
     )
 
 
-@app.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+@api_router.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_time_entry(
     entry_id: int,
     payload: schemas.TimeEntryDelete = Body(...),
@@ -802,7 +803,7 @@ def delete_time_entry(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post("/clock/in", response_model=schemas.ClockResponse)
+@api_router.post("/clock/in", response_model=schemas.ClockResponse)
 def clock_in(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     employee = get_active_employee_by_code(db, payload.employee_code)
     open_entry = db.scalar(
@@ -821,7 +822,7 @@ def clock_in(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     return schemas.ClockResponse(status="clocked_in", message="הכניסה נרשמה בהצלחה", entry_id=entry.id)
 
 
-@app.post("/clock/out", response_model=schemas.ClockResponse)
+@api_router.post("/clock/out", response_model=schemas.ClockResponse)
 def clock_out(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     employee = get_active_employee_by_code(db, payload.employee_code)
     open_entry = db.scalar(
@@ -839,7 +840,7 @@ def clock_out(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     return schemas.ClockResponse(status="clocked_out", message="היציאה נרשמה בהצלחה", entry_id=open_entry.id)
 
 
-@app.post("/clock/status", response_model=schemas.ClockStatus)
+@api_router.post("/clock/status", response_model=schemas.ClockStatus)
 def clock_status(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     employee = get_active_employee_by_code(db, payload.employee_code)
     open_entry = db.scalar(
@@ -848,7 +849,7 @@ def clock_status(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
     return schemas.ClockStatus(is_clocked_in=open_entry is not None)
 
 
-@app.get("/clock/active", response_model=list[schemas.ActiveShift])
+@api_router.get("/clock/active", response_model=list[schemas.ActiveShift])
 def list_active_shifts(db: Session = Depends(get_db)):
     now = dt.datetime.now()
     entries = db.execute(
@@ -929,7 +930,7 @@ def _collect_summary_report(
     return range_start, range_end, response_rows
 
 
-@app.get("/reports", response_model=schemas.ReportResponse)
+@api_router.get("/reports", response_model=schemas.ReportResponse)
 def generate_report(
     month: Optional[str] = None,
     start: Optional[dt.date] = None,
@@ -1006,7 +1007,7 @@ def _collect_daily_report(
     return range_start, range_end, employees_response
 
 
-@app.get("/reports/daily", response_model=schemas.DailyReportResponse)
+@api_router.get("/reports/daily", response_model=schemas.DailyReportResponse)
 def generate_daily_report(
     month: Optional[str] = None,
     start: Optional[dt.date] = None,
@@ -1024,7 +1025,7 @@ def generate_daily_report(
     )
 
 
-@app.get("/reports/daily/export")
+@api_router.get("/reports/daily/export")
 def export_daily_report(
     month: Optional[str] = None,
     start: Optional[dt.date] = None,
@@ -1082,7 +1083,7 @@ def export_daily_report(
     )
 
 
-@app.get("/reports/export")
+@api_router.get("/reports/export")
 def export_summary_report(
     month: Optional[str] = None,
     start: Optional[dt.date] = None,
@@ -1124,7 +1125,7 @@ def export_summary_report(
     )
 
 
-@app.get("/settings", response_model=schemas.SettingsOut)
+@api_router.get("/settings", response_model=schemas.SettingsOut)
 def get_settings_endpoint(db: Session = Depends(get_db)):
     schema_ok = False
     setting: Optional[Setting] = None
@@ -1196,7 +1197,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
     )
 
 
-@app.put("/settings", response_model=schemas.SettingsOut)
+@api_router.put("/settings", response_model=schemas.SettingsOut)
 def update_settings(payload: schemas.SettingsUpdate):
     override = _override_from_update(payload)
     _ensure_primary_connection(override)
@@ -1292,7 +1293,7 @@ def update_settings(payload: schemas.SettingsUpdate):
         )
 
 
-@app.get("/settings/export", response_model=schemas.SettingsExport)
+@api_router.get("/settings/export", response_model=schemas.SettingsExport)
 def export_settings(db: Session = Depends(get_db)):
     try:
         ensure_legacy_schema(get_engine())
@@ -1323,7 +1324,7 @@ def export_settings(db: Session = Depends(get_db)):
     )
 
 
-@app.post("/settings/import", response_model=schemas.SettingsOut)
+@api_router.post("/settings/import", response_model=schemas.SettingsOut)
 def import_settings(payload: schemas.SettingsImport):
     override = _override_from_import(payload)
     _ensure_primary_connection(override)
@@ -1408,7 +1409,7 @@ def import_settings(payload: schemas.SettingsImport):
         )
 
 
-@app.post("/auth/verify-pin", response_model=schemas.PinVerifyResponse)
+@api_router.post("/auth/verify-pin", response_model=schemas.PinVerifyResponse)
 def verify_pin_endpoint(payload: schemas.PinVerifyRequest):
     setting = _load_setting()
     if not setting or not setting.pin_hash:
@@ -1417,6 +1418,8 @@ def verify_pin_endpoint(payload: schemas.PinVerifyRequest):
         raise HTTPException(status_code=403, detail="קוד PIN שגוי")
     return schemas.PinVerifyResponse(ok=True)
 
+
+app.include_router(api_router, prefix="/api")
 
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")

@@ -21,11 +21,7 @@ class EmployeeBase(BaseModel):
 
 
 class EmployeeCreate(EmployeeBase):
-    id_number: str = Field(
-        ...,
-        max_length=32,
-        pattern=r"^\d{1,32}$",
-    )
+    pass
 
 
 class EmployeeUpdate(BaseModel):

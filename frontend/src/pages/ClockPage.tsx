@@ -179,7 +179,7 @@ const ClockPage: React.FC = () => {
               <thead>
                 <tr>
                   <th>שם העובד</th>
-                  <th>מספר מזהה</th>
+                  <th>מספר ת"ז</th>
                   <th>שעת כניסה</th>
                   <th>משך משמרת</th>
                 </tr>

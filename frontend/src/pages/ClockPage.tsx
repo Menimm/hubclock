@@ -39,9 +39,12 @@ const ClockPage: React.FC = () => {
   const [isClockedIn, setIsClockedIn] = useState<boolean | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const deviceIdRef = useRef<string>(typeof window !== "undefined" ? getDeviceId() : "unknown-device");
+  const [deviceId, setDeviceId] = useState<string>(deviceIdRef.current);
 
   useEffect(() => {
-    deviceIdRef.current = getDeviceId();
+    const id = getDeviceId();
+    deviceIdRef.current = id;
+    setDeviceId(id);
   }, []);
 
   const loadActive = async (silent = false) => {
@@ -159,6 +162,45 @@ const ClockPage: React.FC = () => {
     <div className="card">
       <h2>שעון נוכחות</h2>
       <p>הקלידו את מספר העובד כדי לפתוח או לסגור משמרת. המספר מוסתר לשמירה על פרטיות.</p>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "0.5rem",
+          margin: "1rem 0",
+          padding: "0.6rem 0.9rem",
+          borderRadius: "8px",
+          backgroundColor: "#eef2ff",
+          color: "#1e3a8a",
+          fontWeight: 500
+        }}
+      >
+        <span>
+          מזהה המכשיר הנוכחי:&nbsp;
+          <code style={{ direction: "ltr" }}>
+            {deviceId && deviceId !== "unknown-device" ? deviceId : "לא זמין"}
+          </code>
+        </span>
+        {deviceId && deviceId !== "unknown-device" ? (
+          <button
+            type="button"
+            className="secondary"
+            style={{ padding: "0.15rem 0.6rem", fontSize: "0.85rem" }}
+            onClick={() => {
+              void navigator.clipboard.writeText(deviceId).catch(() => {
+                window.prompt("העתקה לא הצליחה אוטומטית. העתיקו את המזהה ידנית:", deviceId);
+              });
+            }}
+          >
+            העתקה
+          </button>
+        ) : (
+          <span style={{ fontSize: "0.85rem" }}>
+            אם אינכם רואים מזהה, וודאו שהדפדפן מאפשר שימוש בעוגיות/LocalStorage.
+          </span>
+        )}
+      </div>
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <label htmlFor="employeeCode">מספר עובד</label>

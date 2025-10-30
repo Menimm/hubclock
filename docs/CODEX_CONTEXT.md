@@ -2,6 +2,14 @@
 
 This document captures the current state of the HubClock project so future Codex sessions can resume seamlessly. Keep it up-to-date whenever major architectural or configuration decisions change.
 
+## Product Overview & Core Requirements
+- Purpose: local kiosk time-clock for a small business (initially a deli with ~5 employees) running on a VM with locally managed MySQL.
+- Clock-in/out: employees enter their code (masked) on a Hebrew, mobile-friendly interface with a single toggle button and live-updating list of active shifts.
+- Employees module: admin manages full name, employee code, external ID (`id_number`, numeric string with leading zeros), hourly rate, active flag; can add manual shifts; supports JSON import/export of employees and time entries.
+- Dashboard: monthly/custom summaries and detailed daily reports per employee with shift editing/deletion (PIN re-auth), Excel exports (daily + summary) with optional wage columns; daily exports include individual shift rows.
+- Settings: configure business name, currency (default ILS), theme color, admin PIN, DB connection parameters (primary/secondary MySQL), theme + name applied globally; includes DB test/init, settings import/export.
+- UX/Security: admin routes PIN-gated; PIN input hidden; verification endpoint works even before DB setup. Reports and active shift lists show employee IDs.
+
 ## Deployment & Services
 - Backend: FastAPI (`hubclock-backend.service`) runs under systemd; production assets served via Uvicorn.
 - Frontend: React/Vite; production build lives in `frontend/dist`. `scripts/setup_frontend.sh` and `scripts/setup_ubuntu.sh` can trigger `npm run build` interactively.
@@ -31,6 +39,8 @@ This document captures the current state of the HubClock project so future Codex
 - After changing frontend code, rebuild `frontend/dist` (either via `npm --prefix frontend run build` or `setproduction.sh install backend`).
 - If requests hit `/clock/...` instead of `/api/clock/...`, verify the deployed bundle has the correct `VITE_API_BASE_URL` and rebuild if necessary.
 - Certbot integration assumes port 80 is temporarily available for HTTP-01 validation.
+- Hebrew localisation is pervasive; keep new UI labels/messages in Hebrew to maintain consistency.
+- Clock-in/out must remain a masked, single-button flow; employee codes are distinct from `id_number` (government ID), so do not swap their roles.
 
 ## Last Session Summary (2025-10-29)
 - API prefixed with `/api`.

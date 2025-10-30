@@ -1047,11 +1047,38 @@ def generate_daily_report(
     start: Optional[dt.date] = None,
     end: Optional[dt.date] = None,
     employee_id: Optional[int] = None,
+    include_device_ids: bool = True,
     db: Session = Depends(get_db),
 ):
     range_start, range_end, employees_response = _collect_daily_report(
         db, month, start, end, employee_id
     )
+    if not include_device_ids:
+        masked_employees: list[schemas.DailyEmployeeReport] = []
+        for employee in employees_response:
+            masked_shifts = [
+                schemas.DailyShiftRow(
+                    entry_id=shift.entry_id,
+                    shift_date=shift.shift_date,
+                    clock_in=shift.clock_in,
+                    clock_out=shift.clock_out,
+                    duration_minutes=shift.duration_minutes,
+                    hourly_rate=shift.hourly_rate,
+                    estimated_pay=shift.estimated_pay,
+                    clock_in_device_id=None,
+                    clock_out_device_id=None,
+                )
+                for shift in employee.shifts
+            ]
+            masked_employees.append(
+                schemas.DailyEmployeeReport(
+                    employee_id=employee.employee_id,
+                    full_name=employee.full_name,
+                    id_number=employee.id_number,
+                    shifts=masked_shifts,
+                )
+            )
+        employees_response = masked_employees
     return schemas.DailyReportResponse(
         range_start=range_start,
         range_end=range_end,
@@ -1066,6 +1093,7 @@ def export_daily_report(
     end: Optional[dt.date] = None,
     employee_id: Optional[int] = None,
     include_payments: bool = False,
+    include_device_ids: bool = True,
     db: Session = Depends(get_db),
 ):
     range_start, range_end, employees_response = _collect_daily_report(
@@ -1078,14 +1106,14 @@ def export_daily_report(
     headers = [
         "Employee ID",
         "Employee",
-        "Clock-in Device",
-        "Clock-out Device",
         "Start Date",
         "Start Time",
         "End Date",
         "End Time",
         "Total Hours (HH:MM)",
     ]
+    if include_device_ids:
+        headers.extend(["Clock-in Device", "Clock-out Device"])
     if include_payments:
         headers.append("Estimated Pay")
     ws.append(headers)
@@ -1098,14 +1126,14 @@ def export_daily_report(
             row = [
                 employee.id_number or "",
                 employee.full_name,
-                shift.clock_in_device_id or "",
-                shift.clock_out_device_id or "",
                 start_date,
                 shift.clock_in.strftime("%H:%M"),
                 end_date,
                 shift.clock_out.strftime("%H:%M"),
                 total_hours,
             ]
+            if include_device_ids:
+                row.extend([shift.clock_in_device_id or "", shift.clock_out_device_id or ""])
             if include_payments:
                 row.append(shift.estimated_pay)
             ws.append(row)
@@ -1136,6 +1164,7 @@ def export_summary_report(
     end: Optional[dt.date] = None,
     employee_id: Optional[int] = None,
     include_payments: bool = True,
+    include_device_ids: bool = True,
     db: Session = Depends(get_db),
 ):
     range_start, range_end, rows = _collect_summary_report(db, month, start, end, employee_id)

@@ -7,7 +7,6 @@ import { getDeviceId } from "../utils/deviceId";
 type ActiveShift = {
   employee_id: number;
   full_name: string;
-  id_number?: string | null;
   clock_in: string;
   elapsed_minutes: number;
   clock_in_device_id?: string | null;
@@ -234,14 +233,13 @@ const ClockPage: React.FC = () => {
           <p>אין עובדים במשמרת כרגע.</p>
         ) : (
           <div className="table-wrapper" style={{ maxHeight: "420px", overflowY: "auto" }}>
-            <table className="table" style={{ minWidth: "720px" }}>
+            <table className="table" style={{ minWidth: "680px" }}>
               <thead>
                 <tr>
                   <th>שם העובד</th>
-                  <th>מספר ת"ז</th>
-                  <th>מכשיר</th>
                   <th>שעת כניסה</th>
                   <th>משך משמרת</th>
+                  <th>מכשיר</th>
                 </tr>
               </thead>
               <tbody>
@@ -251,10 +249,9 @@ const ClockPage: React.FC = () => {
                   return (
                     <tr key={shift.employee_id}>
                       <td>{shift.full_name}</td>
-                      <td>{shift.id_number ?? ""}</td>
-                      <td>{shift.clock_in_device_id ?? ""}</td>
                       <td>{format(clockInDate, "dd.MM.yyyy HH:mm", { locale: he })}</td>
                       <td>{formatMinutes(duration)}</td>
+                      <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>{shift.clock_in_device_id ?? ""}</td>
                     </tr>
                   );
                 })}

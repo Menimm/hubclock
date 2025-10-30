@@ -92,6 +92,7 @@ const DashboardPage: React.FC = () => {
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [includePayments, setIncludePayments] = useState(false);
+  const [includeDeviceIds, setIncludeDeviceIds] = useState(true);
   const [pinModal, setPinModal] = useState<PinModalConfig | null>(null);
   const [pinValue, setPinValue] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -149,7 +150,11 @@ const DashboardPage: React.FC = () => {
         setSummaryReport(response.data);
         setDailyReport(null);
       } else {
-        const response = await api.get<DailyReportResponse>(`/reports/daily?${filters.toString()}`);
+        const qs = filters.toString();
+        const separator = qs ? "&" : "";
+        const response = await api.get<DailyReportResponse>(
+          `/reports/daily?${qs}${separator}include_device_ids=${includeDeviceIds}`
+        );
         setDailyReport(response.data);
         setSummaryReport(null);
       }
@@ -164,7 +169,8 @@ const DashboardPage: React.FC = () => {
     setIsExporting(true);
     try {
       const qs = filters.toString();
-      const requestUrl = `/reports/daily/export?${qs ? `${qs}&` : ""}include_payments=${includePayments}`;
+      const prefix = qs ? `${qs}&` : "";
+      const requestUrl = `/reports/daily/export?${prefix}include_payments=${includePayments}&include_device_ids=${includeDeviceIds}`;
       const response = await api.get(requestUrl, {
         responseType: "blob"
       });
@@ -192,7 +198,8 @@ const DashboardPage: React.FC = () => {
     setIsExporting(true);
     try {
       const qs = filters.toString();
-      const requestUrl = `/reports/export?${qs ? `${qs}&` : ""}include_payments=${includePayments}`;
+      const prefix = qs ? `${qs}&` : "";
+      const requestUrl = `/reports/export?${prefix}include_payments=${includePayments}&include_device_ids=${includeDeviceIds}`;
       const response = await api.get(requestUrl, { responseType: "blob" });
       const blob = new Blob([response.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -445,10 +452,10 @@ const DashboardPage: React.FC = () => {
                     <tr>
                       <th>תאריך</th>
                       <th>כניסה</th>
-                      <th>מכשיר כניסה</th>
                       <th>יציאה</th>
-                      <th>מכשיר יציאה</th>
                       <th>משך (HH:MM)</th>
+                      {includeDeviceIds && <th>מכשיר כניסה</th>}
+                      {includeDeviceIds && <th>מכשיר יציאה</th>}
                       <th style={{ minWidth: "160px" }}>פעולות</th>
                     </tr>
                   </thead>
@@ -470,9 +477,9 @@ const DashboardPage: React.FC = () => {
 
                           return (
                             <tr key={shift.entry_id} style={isEditing ? { background: "#eef2ff" } : undefined}>
-                              <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
-                              <td>
-                                {isEditing ? (
+                          <td>{format(new Date(shift.shift_date), "dd.MM.yyyy", { locale: he })}</td>
+                          <td>
+                            {isEditing ? (
                               <input
                                 type="datetime-local"
                                 value={editClockIn}
@@ -482,26 +489,30 @@ const DashboardPage: React.FC = () => {
                             ) : (
                               format(new Date(shift.clock_in), "HH:mm", { locale: he })
                             )}
-                              </td>
-                              <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
-                                {formatDeviceId(shift.clock_in_device_id)}
-                              </td>
-                              <td>
-                                {isEditing ? (
-                                  <input
-                                    type="datetime-local"
-                                    value={editClockOut}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="datetime-local"
+                                value={editClockOut}
                                 onChange={(event) => setEditClockOut(event.target.value)}
                                 style={{ minWidth: "200px" }}
                               />
                             ) : (
                               format(new Date(shift.clock_out), "HH:mm", { locale: he })
                             )}
-                              </td>
-                              <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
-                                {formatDeviceId(shift.clock_out_device_id)}
-                              </td>
-                              <td>{durationPreview}</td>
+                          </td>
+                          <td>{durationPreview}</td>
+                          {includeDeviceIds && (
+                            <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
+                              {formatDeviceId(shift.clock_in_device_id)}
+                            </td>
+                          )}
+                          {includeDeviceIds && (
+                            <td style={{ direction: "ltr", whiteSpace: "nowrap" }}>
+                              {formatDeviceId(shift.clock_out_device_id)}
+                            </td>
+                          )}
                           <td>
                             {isEditing ? (
                               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -619,13 +630,39 @@ const DashboardPage: React.FC = () => {
           >
             {isExporting ? "מכין קובץ..." : "ייצוא לאקסל"}
           </button>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "1rem" }}>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              marginTop: "1rem",
+              flexWrap: "nowrap",
+              whiteSpace: "nowrap"
+            }}
+          >
             <input
               type="checkbox"
               checked={includePayments}
               onChange={(event) => setIncludePayments(event.target.checked)}
             />
             לכלול חישובי שכר בקובץ
+          </label>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              marginTop: "1rem",
+              flexWrap: "nowrap",
+              whiteSpace: "nowrap"
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeDeviceIds}
+              onChange={(event) => setIncludeDeviceIds(event.target.checked)}
+            />
+            להציג מזהי מכשירים בדוח
           </label>
         </div>
       </div>

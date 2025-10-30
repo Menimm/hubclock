@@ -40,7 +40,6 @@ const ClockPage: React.FC = () => {
   const [activeShifts, setActiveShifts] = useState<ActiveShift[]>([]);
   const [isClockedIn, setIsClockedIn] = useState<boolean | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const deviceIdRef = useRef<string>(typeof window !== "undefined" ? getDeviceId() : "unknown-device");
   const [deviceId, setDeviceId] = useState<string>(deviceIdRef.current);
 
@@ -215,7 +214,6 @@ const ClockPage: React.FC = () => {
           <label htmlFor="employeeCode">מספר עובד</label>
           <input
             id="employeeCode"
-            ref={inputRef}
             type="password"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -234,79 +232,6 @@ const ClockPage: React.FC = () => {
             {checkingStatus ? "בודק..." : isClockedIn ? "סיום משמרת" : "תחילת משמרת"}
           </button>
         </div>
-      </div>
-      <div
-        style={{
-          marginTop: "1rem",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "0.75rem",
-          maxWidth: "320px"
-        }}
-      >
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-          <button
-            key={digit}
-            type="button"
-            className="secondary"
-            style={{
-              fontSize: "1.6rem",
-              padding: "1rem 0",
-              borderRadius: "0.75rem"
-            }}
-            onClick={() => {
-              setEmployeeCode((prev) => `${prev}${digit}`);
-              inputRef.current?.focus();
-            }}
-          >
-            {digit}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="secondary"
-          style={{
-            fontSize: "1.1rem",
-            padding: "1rem 0",
-            borderRadius: "0.75rem"
-          }}
-          onClick={() => {
-            setEmployeeCode("");
-            inputRef.current?.focus();
-          }}
-        >
-          נקה
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          style={{
-            fontSize: "1.6rem",
-            padding: "1rem 0",
-            borderRadius: "0.75rem"
-          }}
-          onClick={() => {
-            setEmployeeCode((prev) => `${prev}0`);
-            inputRef.current?.focus();
-          }}
-        >
-          0
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          style={{
-            fontSize: "1.1rem",
-            padding: "1rem 0",
-            borderRadius: "0.75rem"
-          }}
-          onClick={() => {
-            setEmployeeCode((prev) => prev.slice(0, -1));
-            inputRef.current?.focus();
-          }}
-        >
-          מחיקה
-        </button>
       </div>
       {statusMessage && statusKind && (
         <div className={`status ${statusKind}`} role="alert">

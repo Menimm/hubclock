@@ -81,13 +81,13 @@ default_port=${default_port:-5173}
 default_api=$(get_env_value "VITE_API_BASE_URL" "$ENV_FILE")
 if [[ -z "$default_api" || "$default_api" == http://127.0.0.1:8000 ]]; then
   if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
-    default_api="http://${IPV4_CANDIDATES[0]}:8000"
+    default_api="http://${IPV4_CANDIDATES[0]}:8000/api"
   else
-    default_api="http://127.0.0.1:8000"
+    default_api="http://127.0.0.1:8000/api"
   fi
 fi
 echo "[?] Which URL should the browser use for API calls (VITE_API_BASE_URL)?"
-echo "    Use http://<this-machine-ip>:<backend-port> when the frontend is accessed remotely."
+echo "    Use http://<this-machine-ip>:<backend-port>/api when the frontend is accessed remotely."
 read -rp "Backend API base URL [$default_api]: " api_base
 api_base=${api_base:-$default_api}
 set_env_value "$ENV_FILE" "VITE_API_BASE_URL" "$api_base"

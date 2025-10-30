@@ -183,9 +183,9 @@ set_env_value "$BACKEND_ENV" "UVICORN_PORT" "$backend_port"
 frontend_api_default=$(get_env_value "VITE_API_BASE_URL" "$FRONTEND_ENV")
 if [[ -z "$frontend_api_default" || "$frontend_api_default" == http://127.0.0.1:8000 ]]; then
   if [[ ${#IPV4_CANDIDATES[@]} -gt 0 ]]; then
-    frontend_api_default="http://${IPV4_CANDIDATES[0]}:$backend_port"
+    frontend_api_default="http://${IPV4_CANDIDATES[0]}:$backend_port/api"
   else
-    frontend_api_default="http://127.0.0.1:$backend_port"
+    frontend_api_default="http://127.0.0.1:$backend_port/api"
   fi
 fi
 read -rp "Backend API base URL for the frontend [$frontend_api_default]: " frontend_api

@@ -655,25 +655,36 @@ const DashboardPage: React.FC = () => {
             />
             לכלול חישובי שכר בקובץ
           </label>
-          {showClockDeviceSetting && (
-            <label
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                marginTop: "1rem",
-                flexWrap: "nowrap",
-                whiteSpace: "nowrap"
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              marginTop: "1rem",
+              flexWrap: "nowrap",
+              whiteSpace: "nowrap",
+              color: showClockDeviceSetting ? "inherit" : "#98a2b3"
+            }}
+            title={
+              showClockDeviceSetting
+                ? undefined
+                : "יש לאפשר הצגת מזהי מכשיר במסך ההגדרות כדי להשתמש באפשרות זו"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={includeDeviceIds}
+              disabled={!showClockDeviceSetting}
+              onChange={(event) => {
+                if (!showClockDeviceSetting) {
+                  setIncludeDeviceIds(false);
+                  return;
+                }
+                setIncludeDeviceIds(event.target.checked);
               }}
-            >
-              <input
-                type="checkbox"
-                checked={includeDeviceIds}
-                onChange={(event) => setIncludeDeviceIds(event.target.checked)}
-              />
-              להציג מזהי מכשירים בדוח
-            </label>
-          )}
+            />
+            להציג מזהי מכשירים בדוח
+          </label>
         </div>
       </div>
 

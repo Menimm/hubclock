@@ -160,9 +160,13 @@ const ClockPage: React.FC = () => {
     }
   };
 
+  const todayLabel = format(new Date(), "dd/MM/yy", { locale: he });
+
   return (
     <div className="card">
-      <h2>שעון נוכחות</h2>
+      <h2>
+        שעון נוכחות - {todayLabel}
+      </h2>
       <p>הקלידו את מספר העובד כדי לפתוח או לסגור משמרת. המספר מוסתר לשמירה על פרטיות.</p>
       {showDeviceColumns && (
         <div

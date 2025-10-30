@@ -18,6 +18,7 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
     employee_code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    id_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, unique=True)
     hourly_rate: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -66,4 +67,4 @@ class Setting(Base):
     primary_database: Mapped[Optional[str]] = mapped_column(String(16), default="primary")
     primary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     secondary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=3)

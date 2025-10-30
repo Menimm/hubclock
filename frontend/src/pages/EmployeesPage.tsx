@@ -5,6 +5,7 @@ interface Employee {
   id: number;
   full_name: string;
   employee_code: string;
+  id_number?: string | null;
   hourly_rate: number;
   active: boolean;
 }
@@ -18,6 +19,7 @@ interface ManualEntryPayload {
 const initialEmployee: Omit<Employee, "id"> = {
   full_name: "",
   employee_code: "",
+  id_number: "",
   hourly_rate: 0,
   active: true
 };
@@ -60,6 +62,13 @@ const EmployeesPage: React.FC = () => {
       const payload: Record<string, unknown> = {};
       if (updates.full_name !== undefined) payload.full_name = updates.full_name;
       if (updates.employee_code !== undefined) payload.employee_code = updates.employee_code;
+      if (updates.id_number !== undefined) {
+        if (updates.id_number === "" || updates.id_number === null) {
+          payload.id_number = null;
+        } else {
+          payload.id_number = updates.id_number;
+        }
+      }
       if (updates.hourly_rate !== undefined) payload.hourly_rate = updates.hourly_rate;
       if (updates.active !== undefined) payload.active = updates.active;
       const response = await api.put<Employee>(`/employees/${employeeId}`, payload);
@@ -158,6 +167,20 @@ const EmployeesPage: React.FC = () => {
             />
           </div>
           <div>
+            <label htmlFor="idNumber">מספר מזהה</label>
+            <input
+              id="idNumber"
+              value={form.id_number ?? ""}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, id_number: event.target.value.replace(/[^0-9]/g, "") }))
+              }
+              maxLength={32}
+              inputMode="numeric"
+              placeholder="ספרות בלבד"
+              required
+            />
+          </div>
+          <div>
             <label htmlFor="hourlyRate">שכר שעתי</label>
             <input
               id="hourlyRate"
@@ -183,6 +206,7 @@ const EmployeesPage: React.FC = () => {
               <tr>
                 <th>שם</th>
                 <th>מספר עובד</th>
+                <th>מספר מזהה</th>
                 <th>שכר שעתי</th>
                 <th>סטטוס</th>
                 <th>פעולות</th>
@@ -191,7 +215,7 @@ const EmployeesPage: React.FC = () => {
             <tbody>
               {employees.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "1rem" }}>
                     התחילו בהוספת העובדים.
                   </td>
                 </tr>
@@ -215,11 +239,28 @@ const EmployeesPage: React.FC = () => {
                     <td>
                       <input
                         value={employee.employee_code}
+                        maxLength={32}
                         onChange={(event) =>
                           setEmployees((prev) =>
                             prev.map((item) =>
                               item.id === employee.id
                                 ? { ...item, employee_code: event.target.value }
+                                : item
+                            )
+                          )
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={employee.id_number ?? ""}
+                        maxLength={32}
+                        inputMode="numeric"
+                        onChange={(event) =>
+                          setEmployees((prev) =>
+                            prev.map((item) =>
+                              item.id === employee.id
+                                ? { ...item, id_number: event.target.value.replace(/[^0-9]/g, "") }
                                 : item
                             )
                           )
@@ -270,6 +311,7 @@ const EmployeesPage: React.FC = () => {
                             updateEmployee(employee.id, {
                               full_name: employee.full_name,
                               employee_code: employee.employee_code,
+                              id_number: employee.id_number ?? null,
                               hourly_rate: employee.hourly_rate,
                               active: employee.active
                             })
@@ -305,6 +347,7 @@ const EmployeesPage: React.FC = () => {
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.full_name}
+                  {employee.id_number ? ` (${employee.id_number})` : ""}
                 </option>
               ))}
             </select>

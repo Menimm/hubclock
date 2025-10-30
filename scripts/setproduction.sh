@@ -60,17 +60,19 @@ remove_service() {
 }
 
 ensure_components() {
+  local parsed=()
   if [[ $# -eq 0 ]]; then
-    comps=(backend nginx mysql)
+    parsed=(backend nginx mysql)
   else
     for item in "$@"; do
       case "$item" in
         all)
-          comps=(backend nginx mysql)
+          parsed=(backend nginx mysql)
+          echo "${parsed[@]}"
           return
           ;;
         backend|nginx|mysql)
-          comps+=("$item")
+          parsed+=("$item")
           ;;
         *)
           echo "[!] Unknown component: $item" >&2
@@ -79,6 +81,10 @@ ensure_components() {
       esac
     done
   fi
+  if [[ ${#parsed[@]} -eq 0 ]]; then
+    parsed=(backend nginx mysql)
+  fi
+  echo "${parsed[@]}"
 }
 
 install_backend() { ./scripts/install_services.sh --production; }
@@ -115,8 +121,8 @@ status_mysql() {
 
 run_install() {
   need_root
-  ensure_components "${@:2}"
-  for comp in "${comps[@]}"; do
+  read -r -a components <<<"$(ensure_components "${@:2}")"
+  for comp in "${components[@]}"; do
     echo "[i] Installing $comp"
     case "$comp" in
       backend) install_backend ;;
@@ -130,8 +136,8 @@ run_install() {
 
 run_uninstall() {
   need_root
-  ensure_components "${@:2}"
-  for comp in "${comps[@]}"; do
+  read -r -a components <<<"$(ensure_components "${@:2}")"
+  for comp in "${components[@]}"; do
     echo "[i] Uninstalling $comp"
     case "$comp" in
       backend) uninstall_backend ;;
@@ -145,8 +151,8 @@ run_uninstall() {
 
 run_start() {
   need_root
-  ensure_components "${@:2}"
-  for comp in "${comps[@]}"; do
+  read -r -a components <<<"$(ensure_components "${@:2}")"
+  for comp in "${components[@]}"; do
     echo "[i] Starting $comp"
     case "$comp" in
       backend) start_backend ;;
@@ -159,8 +165,8 @@ run_start() {
 
 run_stop() {
   need_root
-  ensure_components "${@:2}"
-  for comp in "${comps[@]}"; do
+  read -r -a components <<<"$(ensure_components "${@:2}")"
+  for comp in "${components[@]}"; do
     echo "[i] Stopping $comp"
     case "$comp" in
       backend) stop_backend ;;
@@ -171,8 +177,8 @@ run_stop() {
 }
 
 run_status() {
-  ensure_components "${@:2}"
-  for comp in "${comps[@]}"; do
+  read -r -a components <<<"$(ensure_components "${@:2}")"
+  for comp in "${components[@]}"; do
     echo "=== ${comp^^} ==="
     case "$comp" in
       backend) status_backend ;;

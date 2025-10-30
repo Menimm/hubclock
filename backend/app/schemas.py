@@ -10,17 +10,32 @@ from pydantic import BaseModel, Field
 class EmployeeBase(BaseModel):
     full_name: str = Field(..., max_length=120)
     employee_code: str = Field(..., max_length=32)
+    id_number: Optional[str] = Field(
+        None,
+        max_length=32,
+        pattern=r"^\d{1,32}$",
+        description="External employee identifier (numeric string, leading zeros allowed)",
+    )
     hourly_rate: Decimal = Field(ge=0)
     active: bool = True
 
 
 class EmployeeCreate(EmployeeBase):
-    pass
+    id_number: str = Field(
+        ...,
+        max_length=32,
+        pattern=r"^\d{1,32}$",
+    )
 
 
 class EmployeeUpdate(BaseModel):
     full_name: Optional[str] = Field(None, max_length=120)
     employee_code: Optional[str] = Field(None, max_length=32)
+    id_number: Optional[str] = Field(
+        None,
+        max_length=32,
+        pattern=r"^\d{1,32}$",
+    )
     hourly_rate: Optional[Decimal] = Field(None, ge=0)
     active: Optional[bool] = None
 
@@ -39,6 +54,7 @@ class ClockRequest(BaseModel):
 class ActiveShift(BaseModel):
     employee_id: int
     full_name: str
+    id_number: Optional[str] = None
     clock_in: dt.datetime
     elapsed_minutes: int
 
@@ -78,6 +94,7 @@ class ManualEntryOut(BaseModel):
 class ReportResponseRow(BaseModel):
     employee_id: int
     full_name: str
+    id_number: Optional[str] = None
     total_seconds: int
     total_hours: float
     hourly_rate: Decimal
@@ -103,6 +120,7 @@ class DailyShiftRow(BaseModel):
 class DailyEmployeeReport(BaseModel):
     employee_id: int
     full_name: str
+    id_number: Optional[str] = None
     shifts: list[DailyShiftRow]
 
 
@@ -216,6 +234,7 @@ class SettingsImport(BaseModel):
 class EmployeeImport(BaseModel):
     full_name: str
     employee_code: str
+    id_number: Optional[str] = None
     hourly_rate: Decimal = Field(ge=0)
     active: bool = True
 

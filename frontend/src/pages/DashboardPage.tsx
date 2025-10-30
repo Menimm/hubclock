@@ -7,11 +7,13 @@ import { useSettings } from "../context/SettingsContext";
 interface Employee {
   id: number;
   full_name: string;
+  id_number?: string | null;
 }
 
 interface ReportRow {
   employee_id: number;
   full_name: string;
+  id_number?: string | null;
   total_seconds: number;
   total_hours: number;
   hourly_rate: number;
@@ -37,6 +39,7 @@ interface DailyShift {
 interface DailyEmployeeReport {
   employee_id: number;
   full_name: string;
+  id_number?: string | null;
   shifts: DailyShift[];
 }
 
@@ -359,6 +362,7 @@ const DashboardPage: React.FC = () => {
             <thead>
               <tr>
                 <th>שם העובד</th>
+                <th>מספר מזהה</th>
                 <th>סה"כ שעות</th>
                 <th>שכר שעתי</th>
                 <th>שכר משוער</th>
@@ -367,7 +371,7 @@ const DashboardPage: React.FC = () => {
             <tbody>
               {summaryReport.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "1rem" }}>
                     לא נמצאו שעות בתקופה שנבחרה.
                   </td>
                 </tr>
@@ -375,6 +379,7 @@ const DashboardPage: React.FC = () => {
                 summaryReport.rows.map((row) => (
                   <tr key={row.employee_id}>
                     <td>{row.full_name}</td>
+                    <td>{row.id_number ?? ""}</td>
                     <td>{formatSecondsToHHMM(row.total_seconds)}</td>
                     <td>{currencyFormatter.format(Number(row.hourly_rate ?? 0))}</td>
                     <td>{currencyFormatter.format(row.total_pay)}</td>
@@ -414,7 +419,12 @@ const DashboardPage: React.FC = () => {
           dailyReport.employees.map((employee) => (
             <div key={employee.employee_id} className="card" style={{ background: "#f8fafc" }}>
               <div className="section-title">
-                <h4 style={{ margin: 0 }}>{employee.full_name}</h4>
+                <div>
+                  <h4 style={{ margin: 0 }}>{employee.full_name}</h4>
+                  {employee.id_number && (
+                    <div style={{ fontSize: "0.85rem", color: "#475467" }}>מספר מזהה: {employee.id_number}</div>
+                  )}
+                </div>
                 <span style={{ fontSize: "0.9rem", color: "#475467" }}>{employee.shifts.length} משמרות</span>
               </div>
               <div className="table-wrapper">
@@ -571,6 +581,7 @@ const DashboardPage: React.FC = () => {
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.full_name}
+                  {employee.id_number ? ` (${employee.id_number})` : ""}
                 </option>
               ))}
             </select>

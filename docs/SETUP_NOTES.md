@@ -10,7 +10,7 @@
 - `scripts/setup_backend.sh` / `scripts/setup_frontend.sh` can optionally launch their respective dev servers (backgrounded with logs in `.run/`) once configuration completes.
 - `scripts/setup_ubuntu.sh` can start both services and immediately probe `/auth/verify-pin` via `curl` to confirm connectivity.
 - Production/dev units can be removed with `sudo ./scripts/install_services.sh --remove-production` or `--remove-development`.
-- Unified production control script: `sudo ./scripts/setproduction.sh <install|uninstall|start|stop|status>`.
+- Unified production control script: `sudo ./scripts/setproduction.sh <install|uninstall|start|stop|status> [backend|nginx|mysql|all]`.
 - Install systemd units:
   - Development (backend + Vite dev server): `sudo ./scripts/install_services.sh --dev`
   - Production (backend serving built frontend): `sudo ./scripts/install_services.sh --production`

@@ -6,6 +6,7 @@ import { he } from "date-fns/locale";
 type ActiveShift = {
   employee_id: number;
   full_name: string;
+  id_number?: string | null;
   clock_in: string;
   elapsed_minutes: number;
 };
@@ -174,10 +175,11 @@ const ClockPage: React.FC = () => {
           <p>אין עובדים במשמרת כרגע.</p>
         ) : (
           <div className="table-wrapper" style={{ maxHeight: "420px", overflowY: "auto" }}>
-            <table className="table" style={{ minWidth: "520px" }}>
+            <table className="table" style={{ minWidth: "620px" }}>
               <thead>
                 <tr>
                   <th>שם העובד</th>
+                  <th>מספר מזהה</th>
                   <th>שעת כניסה</th>
                   <th>משך משמרת</th>
                 </tr>
@@ -189,6 +191,7 @@ const ClockPage: React.FC = () => {
                   return (
                     <tr key={shift.employee_id}>
                       <td>{shift.full_name}</td>
+                      <td>{shift.id_number ?? ""}</td>
                       <td>{format(clockInDate, "dd.MM.yyyy HH:mm", { locale: he })}</td>
                       <td>{formatMinutes(duration)}</td>
                     </tr>

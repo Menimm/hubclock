@@ -34,7 +34,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 logger = logging.getLogger(__name__)
 
@@ -210,6 +210,11 @@ def ensure_legacy_schema(engine) -> None:
             for column, ddl in alterations.items():
                 if column not in columns:
                     conn.execute(text(ddl))
+        if "employees" in table_names:
+            employee_columns = {col["name"] for col in inspector.get_columns("employees")}
+            if "id_number" not in employee_columns:
+                conn.execute(text("ALTER TABLE employees ADD COLUMN id_number VARCHAR(32)"))
+                conn.execute(text("ALTER TABLE employees ADD UNIQUE KEY uq_employees_id_number (id_number)"))
 
 
 def populate_setting_defaults(setting: Setting) -> None:
@@ -570,14 +575,23 @@ def create_employee(payload: schemas.EmployeeCreate, db: Session = Depends(get_d
     employee = Employee(
         full_name=payload.full_name,
         employee_code=payload.employee_code,
+        id_number=payload.id_number,
         hourly_rate=Decimal(payload.hourly_rate),
         active=payload.active,
     )
     db.add(employee)
     try:
         db.flush()
-    except IntegrityError:
-        raise HTTPException(status_code=400, detail="קוד העובד כבר בשימוש")
+    except IntegrityError as exc:
+        db.rollback()
+        message = str(exc.orig).lower() if getattr(exc, "orig", None) else ""
+        if "employee_code" in message:
+            detail = "קוד העובד כבר בשימוש"
+        elif "id_number" in message:
+            detail = "מספר הזיהוי כבר בשימוש"
+        else:
+            detail = "שגיאה בעת שמירת העובד"
+        raise HTTPException(status_code=400, detail=detail)
     return employee
 
 
@@ -588,6 +602,7 @@ def export_employees(db: Session = Depends(get_db)):
         {
             "full_name": employee.full_name,
             "employee_code": employee.employee_code,
+            "id_number": employee.id_number,
             "hourly_rate": float(employee.hourly_rate or 0),
             "active": employee.active,
         }
@@ -622,30 +637,39 @@ def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depe
 
     existing_employees = db.scalars(select(Employee)).all()
     code_to_employee: dict[str, Employee] = {emp.employee_code: emp for emp in existing_employees}
+    id_to_employee: dict[str, Employee] = {
+        emp.id_number: emp for emp in existing_employees if emp.id_number
+    }
 
     for incoming in payload.employees:
         employee = code_to_employee.get(incoming.employee_code)
+        if not employee and incoming.id_number:
+            employee = id_to_employee.get(incoming.id_number)
         if not employee:
             employee = Employee(
                 full_name=incoming.full_name,
                 employee_code=incoming.employee_code,
+                id_number=incoming.id_number,
                 hourly_rate=incoming.hourly_rate,
                 active=incoming.active,
             )
             db.add(employee)
             code_to_employee[incoming.employee_code] = employee
+            if incoming.id_number:
+                id_to_employee[incoming.id_number] = employee
         else:
             employee.full_name = incoming.full_name
             employee.hourly_rate = incoming.hourly_rate
             employee.active = incoming.active
+            if incoming.id_number is not None:
+                employee.id_number = incoming.id_number
 
     db.flush()
 
     # refresh mapping with IDs
-    code_to_employee = {
-        emp.employee_code: emp
-        for emp in db.scalars(select(Employee)).all()
-    }
+    refreshed = list(db.scalars(select(Employee)).all())
+    code_to_employee = {emp.employee_code: emp for emp in refreshed}
+    id_to_employee = {emp.id_number: emp for emp in refreshed if emp.id_number}
 
     for entry in payload.time_entries:
         employee = code_to_employee.get(entry.employee_code)
@@ -675,6 +699,9 @@ def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Sessi
         employee.full_name = payload.full_name
     if payload.employee_code is not None:
         employee.employee_code = payload.employee_code
+    updated_fields = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+    if "id_number" in updated_fields:
+        employee.id_number = payload.id_number
     if payload.hourly_rate is not None:
         employee.hourly_rate = Decimal(payload.hourly_rate)
     if payload.active is not None:
@@ -682,8 +709,16 @@ def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Sessi
 
     try:
         db.flush()
-    except IntegrityError:
-        raise HTTPException(status_code=400, detail="קוד העובד כבר בשימוש")
+    except IntegrityError as exc:
+        db.rollback()
+        message = str(exc.orig).lower() if getattr(exc, "orig", None) else ""
+        if "employee_code" in message:
+            detail = "קוד העובד כבר בשימוש"
+        elif "id_number" in message:
+            detail = "מספר הזיהוי כבר בשימוש"
+        else:
+            detail = "שגיאה בעת עדכון העובד"
+        raise HTTPException(status_code=400, detail=detail)
 
     return employee
 
@@ -830,6 +865,7 @@ def list_active_shifts(db: Session = Depends(get_db)):
             schemas.ActiveShift(
                 employee_id=employee.id,
                 full_name=employee.full_name,
+                id_number=employee.id_number,
                 clock_in=entry.clock_in,
                 elapsed_minutes=minutes,
             )
@@ -853,6 +889,7 @@ def _collect_summary_report(
         select(
             Employee.id.label("employee_id"),
             Employee.full_name,
+            Employee.id_number,
             Employee.hourly_rate,
             func.sum(
                 func.timestampdiff(
@@ -882,6 +919,7 @@ def _collect_summary_report(
             schemas.ReportResponseRow(
                 employee_id=row.employee_id,
                 full_name=row.full_name,
+                id_number=row.id_number,
                 total_seconds=seconds,
                 total_hours=hours,
                 hourly_rate=rate,
@@ -928,12 +966,12 @@ def _collect_daily_report(
     rows = db.execute(stmt).all()
 
     grouped: dict[int, list[schemas.DailyShiftRow]] = defaultdict(list)
-    employee_meta: dict[int, tuple[str, Decimal]] = {}
+    employee_meta: dict[int, tuple[str, Decimal, Optional[str]]] = {}
 
     for entry, employee in rows:
         if not entry.clock_out:
             continue
-        employee_meta[employee.id] = (employee.full_name, Decimal(employee.hourly_rate or 0))
+        employee_meta[employee.id] = (employee.full_name, Decimal(employee.hourly_rate or 0), employee.id_number)
         duration = entry.clock_out - entry.clock_in
         minutes = max(int(duration.total_seconds() // 60), 0)
         hours = Decimal(minutes) / Decimal(60)
@@ -953,9 +991,14 @@ def _collect_daily_report(
 
     employees_response: list[schemas.DailyEmployeeReport] = []
     for emp_id, shifts in grouped.items():
-        full_name, _ = employee_meta.get(emp_id, ("", Decimal(0)))
+        full_name, _, id_number = employee_meta.get(emp_id, ("", Decimal(0), None))
         employees_response.append(
-            schemas.DailyEmployeeReport(employee_id=emp_id, full_name=full_name, shifts=shifts)
+            schemas.DailyEmployeeReport(
+                employee_id=emp_id,
+                full_name=full_name,
+                id_number=id_number,
+                shifts=shifts,
+            )
         )
 
     employees_response.sort(key=lambda item: item.full_name)
@@ -997,7 +1040,7 @@ def export_daily_report(
     wb = Workbook()
     ws = wb.active
     ws.title = "Daily Report"
-    headers = ["Employee", "Start Date", "Start Time", "End Date", "End Time", "Total Hours (HH:MM)"]
+    headers = ["Employee ID", "Employee", "Start Date", "Start Time", "End Date", "End Time", "Total Hours (HH:MM)"]
     if include_payments:
         headers.append("Estimated Pay")
     ws.append(headers)
@@ -1008,6 +1051,7 @@ def export_daily_report(
             start_date = shift.clock_in.date().isoformat()
             end_date = shift.clock_out.date().isoformat()
             row = [
+                employee.id_number or "",
                 employee.full_name,
                 start_date,
                 shift.clock_in.strftime("%H:%M"),
@@ -1053,14 +1097,14 @@ def export_summary_report(
     ws = wb.active
     ws.title = "Summary Report"
 
-    headers = ["Employee", "Total Hours (HH:MM)"]
+    headers = ["Employee ID", "Employee", "Total Hours (HH:MM)"]
     if include_payments:
         headers.extend(["Hourly Rate", "Estimated Pay"])
     ws.append(headers)
 
     for row in rows:
         formatted_duration = format_seconds_hhmm(int(row.total_seconds or 0))
-        line = [row.full_name, formatted_duration]
+        line = [row.id_number or "", row.full_name, formatted_duration]
         if include_payments:
             line.extend([float(row.hourly_rate or 0), row.total_pay])
         ws.append(line)

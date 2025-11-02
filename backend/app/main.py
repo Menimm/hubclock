@@ -16,13 +16,13 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from openpyxl import Workbook
-from sqlalchemy import create_engine, delete, func, inspect, select, text
+from sqlalchemy import create_engine, delete, func, inspect, insert, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import schemas
 from .config import get_settings
-from .database import configure_engines, get_db, get_engine, session_scope
+from .database import configure_engines, get_db, get_engine, get_secondary_engine, session_scope
 from .models import AdminAccount, AdminAuditLog, Base, Employee, Setting, TimeEntry
 from .security import hash_pin, verify_pin
 
@@ -176,14 +176,29 @@ def _get_singleton_setting(session: Session) -> Setting:
     return setting
 
 
-def _validate_admin_pin(session: Session, admin_id: int, pin: str) -> tuple[Setting, AdminAccount]:
+def _validate_admin_pin(
+    session: Session,
+    admin_id: int,
+    pin: str,
+    *,
+    bypass_lock: bool = False,
+) -> tuple[Setting, AdminAccount]:
     admin = session.get(AdminAccount, admin_id)
     if not admin or not admin.active:
         raise HTTPException(status_code=403, detail="פרטי הניהול שגויים")
     if not verify_pin(pin, admin.pin_hash):
         raise HTTPException(status_code=403, detail="קוד ה-PIN שגוי")
     setting = _get_singleton_setting(session)
+    if setting.write_lock_active and not bypass_lock:
+        raise HTTPException(status_code=423, detail="שינויים חסומים בזמן סנכרון או תחזוקה")
     return setting, admin
+
+
+def _ensure_writes_allowed(session: Session) -> Setting:
+    setting = _get_singleton_setting(session)
+    if setting.write_lock_active:
+        raise HTTPException(status_code=423, detail="שינויים חסומים בזמן סנכרון או תחזוקה")
+    return setting
 
 
 def _record_admin_audit(session: Session, admin: AdminAccount, action: str, details: Optional[dict] = None) -> None:
@@ -220,6 +235,83 @@ def _serialize_audit_entry(entry: AdminAuditLog) -> schemas.AdminAuditLogEntry:
     )
 
 
+def _get_engine_for_label(label: str):  # type: ignore[return-type]
+    normalized = label.lower()
+    if normalized == "primary":
+        return get_engine()
+    if normalized == "secondary":
+        engine = get_secondary_engine()
+        if engine is None:
+            raise HTTPException(status_code=400, detail="מסד הנתונים המשני אינו מוגדר")
+        return engine
+    raise HTTPException(status_code=400, detail=f"יעד מסד נתונים לא נתמך: {label}")
+
+
+def _replicate_incremental(table, source_session: Session, target_session: Session) -> int:
+    pk_column = table.__table__.c.id
+    max_target = target_session.execute(select(func.max(pk_column))).scalar()
+    max_value = max_target if max_target is not None else 0
+    rows = (
+        source_session.execute(select(table).where(pk_column > max_value).order_by(pk_column)).scalars()
+    )
+    inserted = 0
+    insert_stmt = table.__table__.insert()
+    for row in rows:
+        data = {column.name: getattr(row, column.name) for column in table.__table__.columns}
+        target_session.execute(insert_stmt.values(**data))
+        inserted += 1
+    return inserted
+
+
+def _ensure_setting_present(source_session: Session, target_session: Session) -> int:
+    existing = target_session.scalar(select(func.count(Setting.id))) or 0
+    if existing:
+        return 0
+    setting = source_session.scalar(select(Setting))
+    if not setting:
+        return 0
+    data = {column.name: getattr(setting, column.name) for column in Setting.__table__.columns}
+    target_session.execute(Setting.__table__.insert().values(**data))
+    return 1
+
+
+def _perform_database_sync(source_label: str, target_label: str) -> dict[str, int]:
+    normalized_source = source_label.lower()
+    normalized_target = target_label.lower()
+    if normalized_source == normalized_target:
+        raise HTTPException(status_code=400, detail="מקור ויעד הסנכרון חייבים להיות שונים")
+
+    try:
+        source_engine = _get_engine_for_label(normalized_source)
+        target_engine = _get_engine_for_label(normalized_target)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    SourceSession = sessionmaker(bind=source_engine, autoflush=False, expire_on_commit=False)
+    TargetSession = sessionmaker(bind=target_engine, autoflush=False, expire_on_commit=False)
+
+    copied: dict[str, int] = {}
+
+    with SourceSession() as source_session, TargetSession() as target_session:
+        try:
+            copied["settings"] = _ensure_setting_present(source_session, target_session)
+            copied["employees"] = _replicate_incremental(Employee, source_session, target_session)
+            copied["time_entries"] = _replicate_incremental(TimeEntry, source_session, target_session)
+            copied["admin_accounts"] = _replicate_incremental(AdminAccount, source_session, target_session)
+            copied["admin_audit_logs"] = _replicate_incremental(AdminAuditLog, source_session, target_session)
+            target_session.commit()
+        except HTTPException:
+            target_session.rollback()
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            target_session.rollback()
+            raise HTTPException(status_code=500, detail=f"כשל בסנכרון הנתונים: {exc}") from exc
+
+    return copied
+
+
 def ensure_legacy_schema(engine) -> None:
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
@@ -254,6 +346,7 @@ def ensure_legacy_schema(engine) -> None:
                 "primary_db_active": "ALTER TABLE settings ADD COLUMN primary_db_active BOOLEAN NOT NULL DEFAULT 1",
                 "secondary_db_active": "ALTER TABLE settings ADD COLUMN secondary_db_active BOOLEAN NOT NULL DEFAULT 0",
                 "show_clock_device_ids": "ALTER TABLE settings ADD COLUMN show_clock_device_ids BOOLEAN NOT NULL DEFAULT 1",
+                "write_lock_active": "ALTER TABLE settings ADD COLUMN write_lock_active BOOLEAN NOT NULL DEFAULT 0",
                 "schema_version": "ALTER TABLE settings ADD COLUMN schema_version INT NOT NULL DEFAULT 1",
             }
             for column, ddl in alterations.items():
@@ -345,6 +438,8 @@ def populate_setting_defaults(setting: Setting) -> None:
         setting.secondary_db_active = False
     if setting.show_clock_device_ids is None:
         setting.show_clock_device_ids = True
+    if setting.write_lock_active is None:
+        setting.write_lock_active = False
     if setting.schema_version is None:
         setting.schema_version = SCHEMA_VERSION
 
@@ -672,6 +767,69 @@ def create_database_schema(target: str = "active"):
     return schemas.DBTestResponse(ok=success, message=joined_message)
 
 
+@api_router.post("/db/sync", response_model=schemas.DatabaseSyncResponse)
+def synchronize_databases(payload: schemas.DatabaseSyncRequest):
+    if payload.source.lower() == payload.target.lower():
+        raise HTTPException(status_code=400, detail="מקור ויעד הסנכרון חייבים להיות שונים")
+
+    with session_scope() as session:
+        setting = session.scalar(select(Setting))
+        if not setting:
+            raise HTTPException(status_code=400, detail="לא נמצאו נתוני הגדרות")
+
+        setting, admin = _validate_admin_pin(
+            session,
+            payload.requestor_admin_id,
+            payload.requestor_pin,
+            bypass_lock=True,
+        )
+
+        populate_setting_defaults(setting)
+        try:
+            configure_from_setting(setting)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        original_lock_state = bool(setting.write_lock_active)
+        auto_locked = False
+        if not original_lock_state:
+            setting.write_lock_active = True
+            session.flush()
+            auto_locked = True
+
+        try:
+            copied = _perform_database_sync(payload.source, payload.target)
+        finally:
+            if auto_locked:
+                if payload.auto_unlock:
+                    setting.write_lock_active = False
+                session.flush()
+
+        _sync_setting_pin_hash(session)
+        admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+        session.flush()
+
+        _record_admin_audit(
+            session,
+            admin,
+            "database.sync",
+            {
+                "source": payload.source,
+                "target": payload.target,
+                "copied": copied,
+            },
+        )
+
+        total_copied = sum(copied.values())
+        message = (
+            f"הועתקו {total_copied} רשומות מ-{payload.source} אל {payload.target}"
+            if total_copied
+            else "לא נמצאו נתונים חדשים לסנכרון"
+        )
+
+        return schemas.DatabaseSyncResponse(ok=True, message=message, copied=copied)
+
+
 @api_router.get("/employees", response_model=list[schemas.EmployeeOut])
 def list_employees(db: Session = Depends(get_db)):
     employees = db.scalars(select(Employee).order_by(Employee.full_name)).all()
@@ -680,6 +838,7 @@ def list_employees(db: Session = Depends(get_db)):
 
 @api_router.post("/employees", response_model=schemas.EmployeeOut, status_code=status.HTTP_201_CREATED)
 def create_employee(payload: schemas.EmployeeCreate, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = Employee(
         full_name=payload.full_name,
         employee_code=payload.employee_code,
@@ -740,6 +899,7 @@ def export_employees(db: Session = Depends(get_db)):
 
 @api_router.post("/employees/import")
 def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     if payload.replace_existing:
         db.execute(delete(TimeEntry))
         db.execute(delete(Employee))
@@ -803,6 +963,7 @@ def import_employees(payload: schemas.EmployeesImportPayload, db: Session = Depe
 
 @api_router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
 def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = db.get(Employee, employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="העובד לא נמצא")
@@ -837,6 +998,7 @@ def update_employee(employee_id: int, payload: schemas.EmployeeUpdate, db: Sessi
 
 @api_router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_employee(employee_id: int, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = db.get(Employee, employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="העובד לא נמצא")
@@ -846,6 +1008,7 @@ def delete_employee(employee_id: int, db: Session = Depends(get_db)):
 
 @api_router.post("/employees/{employee_id}/entries", response_model=schemas.ManualEntryOut, status_code=status.HTTP_201_CREATED)
 def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = db.get(Employee, employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="העובד לא נמצא")
@@ -933,6 +1096,7 @@ def delete_time_entry(
 
 @api_router.post("/clock/in", response_model=schemas.ClockResponse)
 def clock_in(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = get_active_employee_by_code(db, payload.employee_code)
     open_entry = db.scalar(
         select(TimeEntry).where(TimeEntry.employee_id == employee.id, TimeEntry.clock_out.is_(None))
@@ -965,6 +1129,7 @@ def clock_in(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
 
 @api_router.post("/clock/out", response_model=schemas.ClockResponse)
 def clock_out(payload: schemas.ClockRequest, db: Session = Depends(get_db)):
+    _ensure_writes_allowed(db)
     employee = get_active_employee_by_code(db, payload.employee_code)
     open_entry = db.scalar(
         select(TimeEntry)
@@ -1341,7 +1506,12 @@ def list_admins():
 @api_router.post("/admins", response_model=schemas.AdminSummary, status_code=status.HTTP_201_CREATED)
 def create_admin(payload: schemas.AdminCreateRequest):
     with session_scope() as session:
-        _, requestor = _validate_admin_pin(session, payload.requestor_admin_id, payload.requestor_pin)
+        total_admins = session.scalar(select(func.count(AdminAccount.id))) or 0
+        requestor: Optional[AdminAccount] = None
+        if total_admins > 0:
+            if not payload.requestor_admin_id or not payload.requestor_pin:
+                raise HTTPException(status_code=403, detail="יש להזין מזהה מנהל וקוד PIN פעיל")
+            _, requestor = _validate_admin_pin(session, payload.requestor_admin_id, payload.requestor_pin)
         name = payload.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="שם המנהל נדרש")
@@ -1353,7 +1523,8 @@ def create_admin(payload: schemas.AdminCreateRequest):
         session.add(admin)
         session.flush()
         _sync_setting_pin_hash(session)
-        _record_admin_audit(session, requestor, "admins.create", {"admin_id": admin.id})
+        if requestor:
+            _record_admin_audit(session, requestor, "admins.create", {"admin_id": admin.id})
         return admin
 
 
@@ -1480,6 +1651,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
     return schemas.SettingsOut(
         currency=setting.currency,
         pin_set=any(admin.active for admin in admins),
+        write_lock_active=bool(setting.write_lock_active),
         db_host=setting.db_host,
         db_port=setting.db_port,
         db_user=setting.db_user,
@@ -1521,7 +1693,10 @@ def update_settings(payload: schemas.SettingsUpdate):
             session.add(setting)
             session.flush()
 
-        setting, admin = _validate_admin_pin(session, payload.admin_id, payload.current_pin)
+        previous_primary_label = setting.primary_database or "primary"
+        original_lock_state = bool(setting.write_lock_active)
+
+        setting, admin = _validate_admin_pin(session, payload.admin_id, payload.current_pin, bypass_lock=True)
 
         changed_fields: set[str] = set()
 
@@ -1569,6 +1744,8 @@ def update_settings(payload: schemas.SettingsUpdate):
             setting.primary_database = payload.primary_database
             changed_fields.add("primary_database")
 
+        new_primary_label = setting.primary_database or "primary"
+
         if payload.brand_name is not None:
             setting.brand_name = payload.brand_name
             changed_fields.add("brand_name")
@@ -1578,6 +1755,13 @@ def update_settings(payload: schemas.SettingsUpdate):
         if payload.show_clock_device_ids is not None:
             setting.show_clock_device_ids = payload.show_clock_device_ids
             changed_fields.add("show_clock_device_ids")
+        if payload.write_lock_active is not None:
+            setting.write_lock_active = payload.write_lock_active
+            changed_fields.add("write_lock_active")
+
+        if payload.write_lock_active is not None:
+            setting.write_lock_active = payload.write_lock_active
+            changed_fields.add("write_lock_active")
 
         if payload.new_pin:
             admin.pin_hash = hash_pin(payload.new_pin)
@@ -1592,14 +1776,35 @@ def update_settings(payload: schemas.SettingsUpdate):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-        admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
-        _sync_setting_pin_hash(session)
+        final_lock_state = bool(setting.write_lock_active)
+        sync_summary: Optional[dict[str, int]] = None
+        if new_primary_label != previous_primary_label:
+            temp_lock_applied = False
+            if not final_lock_state:
+                setting.write_lock_active = True
+                session.flush()
+                temp_lock_applied = True
+            try:
+                sync_summary = _perform_database_sync(previous_primary_label, new_primary_label)
+            finally:
+                if temp_lock_applied:
+                    setting.write_lock_active = final_lock_state
+                    session.flush()
+            changed_fields.add("database_sync")
 
+        _sync_setting_pin_hash(session)
+        admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+
+        audit_details: dict[str, object] = {}
+        if changed_fields:
+            audit_details["fields"] = sorted(changed_fields)
+        if sync_summary:
+            audit_details["sync"] = sync_summary
         _record_admin_audit(
             session,
             admin,
             "settings.update",
-            {"fields": sorted(changed_fields)} if changed_fields else None,
+            audit_details or None,
         )
 
         schema_ok = setting.schema_version == SCHEMA_VERSION
@@ -1608,6 +1813,7 @@ def update_settings(payload: schemas.SettingsUpdate):
         return schemas.SettingsOut(
             currency=setting.currency,
             pin_set=any(candidate.active for candidate in admins),
+            write_lock_active=bool(setting.write_lock_active),
             db_host=setting.db_host,
             db_port=setting.db_port,
             db_user=setting.db_user,
@@ -1664,6 +1870,7 @@ def export_settings(db: Session = Depends(get_db)):
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
         show_clock_device_ids=bool(setting.show_clock_device_ids),
+        write_lock_active=bool(setting.write_lock_active),
         admins=admin_exports,
     )
 
@@ -1809,6 +2016,7 @@ def import_settings(payload: schemas.SettingsImport):
         return schemas.SettingsOut(
             currency=setting.currency,
             pin_set=any(candidate.active for candidate in existing_admins),
+            write_lock_active=bool(setting.write_lock_active),
             db_host=setting.db_host,
             db_port=setting.db_port,
             db_user=setting.db_user,

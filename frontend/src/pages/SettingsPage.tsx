@@ -7,6 +7,12 @@ import { useAuth } from "../context/AuthContext";
 type StatusMessage = { kind: "success" | "error"; message: string } | null;
 type SchemaTarget = "active" | "primary" | "secondary" | "both";
 
+interface DatabaseSyncResponse {
+  ok: boolean;
+  message: string;
+  copied: Record<string, number>;
+}
+
 const currencyOptions = [
   { value: "ILS", label: "שקל חדש (ILS)" },
   { value: "USD", label: "דולר אמריקאי (USD)" },
@@ -18,6 +24,7 @@ const SettingsPage: React.FC = () => {
   const {
     currency,
     pin_set,
+    write_lock_active,
     admins,
     db_host,
     db_port,
@@ -39,6 +46,7 @@ const SettingsPage: React.FC = () => {
     setLocal
   } = useSettings();
   const { selectedAdminId, setSelectedAdminId } = useAuth();
+  const writeLockActive = write_lock_active;
 
   const [currencyValue, setCurrencyValue] = useState(currency);
   const [primaryHost, setPrimaryHost] = useState(db_host ?? "");
@@ -57,12 +65,12 @@ const SettingsPage: React.FC = () => {
   const [showClockDevices, setShowClockDevices] = useState<boolean>(show_clock_device_ids ?? true);
   const activeAdmins = useMemo(() => admins.filter((admin) => admin.active), [admins]);
   const effectiveAdmins = useMemo(() => (activeAdmins.length > 0 ? activeAdmins : admins), [activeAdmins, admins]);
-  const [actingAdminId, setActingAdminId] = useState<number | "">(() => {
+  const [actingAdminId, setActingAdminId] = useState<number | null>(() => {
     if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
       return selectedAdminId;
     }
     const fallback = effectiveAdmins[0]?.id;
-    return fallback ?? "";
+    return fallback ?? null;
   });
   const [adminPinEntry, setAdminPinEntry] = useState("");
   const [generalStatus, setGeneralStatus] = useState<StatusMessage>(null);
@@ -70,6 +78,8 @@ const SettingsPage: React.FC = () => {
   const [adminStatus, setAdminStatus] = useState<StatusMessage>(null);
   const [importStatus, setImportStatus] = useState<StatusMessage>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<StatusMessage>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isSavingAdmin, setIsSavingAdmin] = useState(false);
   const [adminEdits, setAdminEdits] = useState<Record<number, { name?: string; active?: boolean; newPin?: string }>>({});
   const [newAdminName, setNewAdminName] = useState("");
@@ -128,7 +138,7 @@ const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (!effectiveAdmins.length) {
-      setActingAdminId("");
+      setActingAdminId(null);
       return;
     }
     if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
@@ -136,7 +146,7 @@ const SettingsPage: React.FC = () => {
       return;
     }
     setActingAdminId((prev) => {
-      if (typeof prev === "number" && effectiveAdmins.some((admin) => admin.id === prev)) {
+      if (prev !== null && effectiveAdmins.some((admin) => admin.id === prev)) {
         return prev;
       }
       return effectiveAdmins[0].id;
@@ -168,7 +178,7 @@ const SettingsPage: React.FC = () => {
       setStatus({ kind: "error", message: "אין מנהלי מערכת פעילים. צרו או הפעילו מנהל לפני ביצוע פעולה זו." });
       return null;
     }
-    if (actingAdminId === "" || actingAdminId === null) {
+    if (actingAdminId === null) {
       setStatus({ kind: "error", message: "בחרו מנהל מבצע מהרשימה." });
       return null;
     }
@@ -176,7 +186,64 @@ const SettingsPage: React.FC = () => {
       setStatus({ kind: "error", message: "הזינו את קוד ה-PIN של המנהל המבצע." });
       return null;
     }
-    return { adminId: Number(actingAdminId), pin: adminPinEntry.trim() };
+    return { adminId: actingAdminId, pin: adminPinEntry.trim() };
+  };
+
+  const toggleWriteLock = async (nextState: boolean) => {
+    setAdminStatus(null);
+    const credentials = resolveCredentials(setAdminStatus);
+    if (!credentials) {
+      return;
+    }
+    setIsSavingAdmin(true);
+    try {
+      const response = await api.put("/settings", {
+        admin_id: credentials.adminId,
+        current_pin: credentials.pin,
+        write_lock_active: nextState
+      });
+      const nextAdmins = (response.data.admins ?? admins) as AdminSummary[];
+      const nextPinSet = response.data.pin_set ?? nextAdmins.some((admin) => admin.active);
+      setLocal({
+        admins: nextAdmins,
+        pin_set: nextPinSet,
+        write_lock_active: response.data.write_lock_active ?? nextState
+      });
+      setAdminStatus({
+        kind: "success",
+        message: nextState ? "שינויים נחסמו זמנית" : "הנעילה הוסרה"
+      });
+      setAdminPinEntry("");
+    } catch (error) {
+      setAdminStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
+  const runSync = async (source: "primary" | "secondary", target: "primary" | "secondary") => {
+    setSyncStatus(null);
+    const credentials = resolveCredentials(setSyncStatus);
+    if (!credentials) {
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const response = await api.post<DatabaseSyncResponse>("/db/sync", {
+        requestor_admin_id: credentials.adminId,
+        requestor_pin: credentials.pin,
+        source,
+        target,
+        auto_unlock: true
+      });
+      setSyncStatus({ kind: "success", message: response.data.message });
+      setAdminPinEntry("");
+      await refresh();
+    } catch (error) {
+      setSyncStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleAdminSave = async (admin: AdminSummary) => {
@@ -248,15 +315,15 @@ const SettingsPage: React.FC = () => {
       setAdminStatus({ kind: "error", message: "אימות ה-PIN אינו תואם" });
       return;
     }
-    const credentials = resolveCredentials(setAdminStatus);
-    if (!credentials) {
+    const credentials = admins.length > 0 ? resolveCredentials(setAdminStatus) : null;
+    if (admins.length > 0 && !credentials) {
       return;
     }
     setIsSavingAdmin(true);
     try {
       await api.post("/admins", {
-        requestor_admin_id: credentials.adminId,
-        requestor_pin: credentials.pin,
+        requestor_admin_id: credentials?.adminId,
+        requestor_pin: credentials?.pin,
         name: trimmedName,
         pin: trimmedPin
       });
@@ -291,13 +358,15 @@ const SettingsPage: React.FC = () => {
       });
       setGeneralStatus({ kind: "success", message: "ההגדרות נשמרו" });
       const nextAdmins = (response.data.admins ?? admins) as AdminSummary[];
+      const nextPinSet = response.data.pin_set ?? nextAdmins.some((admin) => admin.active);
       setLocal({
         currency: response.data.currency ?? currencyValue,
         theme_color: response.data.theme_color ?? themeColor,
         brand_name: response.data.brand_name ?? brandName,
         show_clock_device_ids: response.data.show_clock_device_ids ?? showClockDevices,
         admins: nextAdmins,
-        pin_set: response.data.pin_set ?? nextAdmins.some((admin) => admin.active)
+        pin_set: nextPinSet,
+        write_lock_active: response.data.write_lock_active ?? writeLockActive
       });
       setAdminPinEntry("");
     } catch (error) {
@@ -365,6 +434,7 @@ const SettingsPage: React.FC = () => {
       });
       setDbStatus({ kind: "success", message: "הגדרות מסדי הנתונים נשמרו" });
       const nextAdmins = (response.data.admins ?? admins) as AdminSummary[];
+      const nextPinSet = response.data.pin_set ?? nextAdmins.some((admin) => admin.active);
       setLocal({
         db_host: response.data.db_host ?? payload.db_host ?? "",
         db_port: response.data.db_port ?? payload.db_port,
@@ -382,7 +452,8 @@ const SettingsPage: React.FC = () => {
         schema_version: response.data.schema_version ?? schema_version,
         show_clock_device_ids: response.data.show_clock_device_ids ?? show_clock_device_ids,
         admins: nextAdmins,
-        pin_set: response.data.pin_set ?? nextAdmins.some((admin) => admin.active)
+        pin_set: nextPinSet,
+        write_lock_active: response.data.write_lock_active ?? writeLockActive
       });
       setAdminPinEntry("");
     } catch (error) {
@@ -510,9 +581,9 @@ const SettingsPage: React.FC = () => {
             <label htmlFor="actingAdmin">מנהל מבצע</label>
             <select
               id="actingAdmin"
-              value={actingAdminId === "" ? "" : Number(actingAdminId)}
+              value={actingAdminId !== null ? String(actingAdminId) : ""}
               onChange={(event) => {
-                const value = event.target.value ? Number(event.target.value) : "";
+                const value = event.target.value ? Number(event.target.value) : null;
                 setActingAdminId(value);
               }}
               disabled={effectiveAdmins.length === 0 || isSavingAdmin}
@@ -541,6 +612,27 @@ const SettingsPage: React.FC = () => {
               disabled={effectiveAdmins.length === 0}
             />
           </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginTop: "0.75rem"
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>
+            מצב נעילה: {writeLockActive ? "שינויים חסומים" : "שינויים מותרים"}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => toggleWriteLock(!writeLockActive)}
+            disabled={isSavingAdmin || effectiveAdmins.length === 0}
+          >
+            {writeLockActive ? "שחרור נעילה" : "הפעלת נעילה"}
+          </button>
         </div>
         {!pin_set && (
           <div className="status error" style={{ marginTop: "0.75rem" }}>
@@ -668,15 +760,45 @@ const SettingsPage: React.FC = () => {
             })}
           </div>
         )}
-        {admins.filter((admin) => admin.active).length < 2 && admins.length > 0 && (
-          <div className="status warning" style={{ marginTop: "0.75rem" }}>
-            מומלץ להחזיק לפחות שני מנהלים פעילים לצורך שחזור בעת הצורך.
-          </div>
-        )}
-      </section>
+      {admins.filter((admin) => admin.active).length < 2 && admins.length > 0 && (
+        <div className="status warning" style={{ marginTop: "0.75rem" }}>
+          מומלץ להחזיק לפחות שני מנהלים פעילים לצורך שחזור בעת הצורך.
+        </div>
+      )}
+    </section>
 
-      <section className="card">
-        <h3>מטבע, מותג וצבע</h3>
+    <section className="card">
+      <h3>סנכרון בין מסדי נתונים</h3>
+      <p>
+        הפעילו סנכרון כאשר חוזרים למסד נתונים שהיה מושבת, או לפני שינוי ההגדרה מי המופע הראשי כדי לוודא ששני המופעים מסונכרנים.
+      </p>
+      <div className="input-row" style={{ alignItems: "flex-end" }}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => runSync("primary", "secondary")}
+          disabled={isSyncing}
+        >
+          סנכרון מראשי למשני
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => runSync("secondary", "primary")}
+          disabled={isSyncing}
+        >
+          סנכרון ממשני לראשי (Failback)
+        </button>
+      </div>
+      {syncStatus && (
+        <div className={`status ${syncStatus.kind}`} style={{ marginTop: "0.75rem" }}>
+          {syncStatus.message}
+        </div>
+      )}
+    </section>
+
+    <section className="card">
+      <h3>מטבע, מותג וצבע</h3>
         <form onSubmit={updateAppearance} className="input-row">
           <div>
             <label htmlFor="currency">קוד מטבע</label>

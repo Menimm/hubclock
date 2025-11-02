@@ -36,6 +36,7 @@
 - Settings API: `GET/PUT /settings`, `POST /settings/import`, `GET /settings/export`.
 - Multi-admin support: `GET /admins` lists accounts, `POST /admins` creates a new admin (requires an existing admin's credentials), `PUT /admins/{id}` updates name/PIN/active state, and `GET /admins/{id}/audit` returns the recent audit trail for that admin.
 - PIN verification and privileged operations now require both `admin_id` and the corresponding `pin` (e.g. `PUT /time-entries/{id}`, `DELETE /time-entries/{id}`, `POST /auth/verify-pin`).
+- Database synchronization: `POST /db/sync` (with `source`/`target` = `primary|secondary`) copies append-only data between databases. The API automatically sets `write_lock_active` to block mutations during the operation, and you can toggle the lock manually via `PUT /settings`.
 
 ## Frontend Access
 - Clock-in page at `/` uses masked input and auto-detects state via `/clock/status`.

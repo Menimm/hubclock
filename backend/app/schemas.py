@@ -141,8 +141,8 @@ class AdminSummary(BaseModel):
 
 
 class AdminCreateRequest(BaseModel):
-    requestor_admin_id: int
-    requestor_pin: str = Field(..., min_length=4, max_length=12)
+    requestor_admin_id: Optional[int] = None
+    requestor_pin: Optional[str] = Field(None, min_length=4, max_length=12)
     name: str = Field(..., max_length=120)
     pin: str = Field(..., min_length=4, max_length=12)
 
@@ -182,6 +182,7 @@ class AdminExportDefinition(BaseModel):
 class SettingsOut(BaseModel):
     currency: str
     pin_set: bool
+    write_lock_active: bool
     db_host: Optional[str] = None
     db_port: Optional[int] = None
     db_user: Optional[str] = None
@@ -206,6 +207,7 @@ class SettingsUpdate(BaseModel):
     currency: Optional[str] = Field(None, max_length=8)
     current_pin: Optional[str] = Field(None, min_length=4, max_length=12)
     new_pin: Optional[str] = Field(None, min_length=4, max_length=12)
+    write_lock_active: Optional[bool] = None
     db_host: Optional[str] = Field(None, max_length=128)
     db_port: Optional[int] = None
     db_user: Optional[str] = Field(None, max_length=64)
@@ -264,6 +266,7 @@ class SettingsExport(BaseModel):
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
     show_clock_device_ids: Optional[bool] = None
+    write_lock_active: Optional[bool] = None
     admins: list[AdminExportDefinition] = Field(default_factory=list)
 
 
@@ -288,6 +291,7 @@ class SettingsImport(BaseModel):
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
     show_clock_device_ids: Optional[bool] = None
+    write_lock_active: Optional[bool] = None
     admins: list[AdminImportDefinition] = Field(default_factory=list)
 
 
@@ -324,3 +328,17 @@ class EmployeesImportPayload(BaseModel):
     replace_existing: bool = False
     employees: list[EmployeeImport]
     time_entries: list[TimeEntryImport] = []
+
+
+class DatabaseSyncRequest(BaseModel):
+    requestor_admin_id: int
+    requestor_pin: str = Field(..., min_length=4, max_length=12)
+    source: str = Field(..., pattern="^(primary|secondary)$")
+    target: str = Field(..., pattern="^(primary|secondary)$")
+    auto_unlock: bool = True
+
+
+class DatabaseSyncResponse(BaseModel):
+    ok: bool
+    message: str
+    copied: dict[str, int]

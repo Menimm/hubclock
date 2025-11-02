@@ -12,6 +12,7 @@ export interface AdminSummary {
 interface SettingsResponse {
   currency: string;
   pin_set: boolean;
+  write_lock_active: boolean;
   db_host: string | null;
   db_port: number | null;
   db_user: string | null;
@@ -34,6 +35,7 @@ interface SettingsResponse {
 interface Settings {
   currency: string;
   pin_set: boolean;
+  write_lock_active: boolean;
   db_host: string;
   db_port: number | null;
   db_user: string;
@@ -64,6 +66,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [settings, setSettings] = useState<Settings>({
     currency: "ILS",
     pin_set: false,
+    write_lock_active: false,
     db_host: "127.0.0.1",
     db_port: 3306,
     db_user: "hubclock",
@@ -90,6 +93,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...prev,
       currency: response.data.currency ?? prev.currency,
       pin_set: response.data.pin_set ?? admins.some((admin) => admin.active),
+      write_lock_active: response.data.write_lock_active ?? prev.write_lock_active,
       db_host: response.data.db_host ?? "",
       db_port: response.data.db_port ?? null,
       db_user: response.data.db_user ?? "",
@@ -128,6 +132,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const next = { ...prev, ...partial };
       if (partial.admins) {
         next.pin_set = partial.pin_set ?? partial.admins.some((admin) => admin.active);
+      }
+      if (partial.write_lock_active !== undefined) {
+        next.write_lock_active = partial.write_lock_active;
       }
       return next;
     });

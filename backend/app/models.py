@@ -81,6 +81,7 @@ class Setting(Base):
     primary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     secondary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     show_clock_device_ids: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    write_lock_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
 

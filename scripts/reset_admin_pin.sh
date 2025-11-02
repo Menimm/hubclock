@@ -80,24 +80,55 @@ export MYSQL_PWD="${MYSQL_PASSWORD}"
 
 MYSQL_OPTS=(-u "$MYSQL_USER" -h "$MYSQL_HOST" -P "$MYSQL_PORT" -N -s "$MYSQL_DATABASE")
 
-SETTINGS_ID="$(mysql "${MYSQL_OPTS[@]}" -e "SELECT id FROM settings ORDER BY id LIMIT 1;")" || {
-  log ERROR "Unable to read settings table"
+readarray -t ADMIN_ROWS < <(mysql "${MYSQL_OPTS[@]}" -e "SELECT id, name, active FROM admin_accounts ORDER BY name;") || {
+  log ERROR "Unable to query admin accounts"
   unset MYSQL_PWD
   exit 1
 }
 
-if [[ -z "$SETTINGS_ID" ]]; then
-  log ERROR "No settings row found. Initialise the application before attempting a PIN reset."
-  unset MYSQL_PWD
-  exit 1
+TARGET_ID=""
+TARGET_NAME=""
+
+if (( ${#ADMIN_ROWS[@]} > 0 )); then
+  log INFO "Existing admin accounts:"
+  for row in "${ADMIN_ROWS[@]}"; do
+    IFS=$'\t' read -r admin_id admin_name admin_active <<<"$row"
+    printf '  [%s] %s (active=%s)\n' "$admin_id" "$admin_name" "$admin_active"
+  done
+  read -r -p "Enter admin ID to reset (leave blank to create new): " TARGET_ID
+  if [[ -n "$TARGET_ID" ]]; then
+    MATCH_ROW="$(mysql "${MYSQL_OPTS[@]}" -e "SELECT name FROM admin_accounts WHERE id=${TARGET_ID};")"
+    if [[ -z "$MATCH_ROW" ]]; then
+      log ERROR "Admin ID ${TARGET_ID} not found"
+      unset MYSQL_PWD
+      exit 1
+    fi
+    TARGET_NAME="$MATCH_ROW"
+  fi
 fi
 
-log INFO "Updating PIN hash for settings row id=${SETTINGS_ID}"
-mysql "${MYSQL_OPTS[@]}" -e "UPDATE settings SET pin_hash='${PIN_HASH}' WHERE id=${SETTINGS_ID};" || {
-  log ERROR "Failed to update PIN hash"
-  unset MYSQL_PWD
-  exit 1
-}
+if [[ -z "$TARGET_ID" ]]; then
+  read -r -p "Enter name for the admin account: " TARGET_NAME
+  if [[ -z "$TARGET_NAME" ]]; then
+    log ERROR "Admin name cannot be empty"
+    unset MYSQL_PWD
+    exit 1
+  fi
+  ESCAPED_NAME="$(printf "%s" "$TARGET_NAME" | sed "s/'/''/g")"
+  log INFO "Creating new admin account '${TARGET_NAME}'"
+  mysql "${MYSQL_OPTS[@]}" -e "INSERT INTO admin_accounts (name, pin_hash, active, created_at, updated_at) VALUES ('${ESCAPED_NAME}', '${PIN_HASH}', 1, NOW(), NOW());" || {
+    log ERROR "Failed to create admin account"
+    unset MYSQL_PWD
+    exit 1
+  }
+else
+  log INFO "Updating PIN hash for admin '${TARGET_NAME}' (id=${TARGET_ID})"
+  mysql "${MYSQL_OPTS[@]}" -e "UPDATE admin_accounts SET pin_hash='${PIN_HASH}', active=1, updated_at=NOW() WHERE id=${TARGET_ID};" || {
+    log ERROR "Failed to update admin PIN"
+    unset MYSQL_PWD
+    exit 1
+  }
+fi
 
 unset MYSQL_PWD
 log INFO "Admin PIN updated successfully"

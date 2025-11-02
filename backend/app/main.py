@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import datetime as dt
 from decimal import Decimal
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import schemas
 from .config import get_settings
 from .database import configure_engines, get_db, get_engine, session_scope
-from .models import Base, Employee, Setting, TimeEntry
+from .models import AdminAccount, AdminAuditLog, Base, Employee, Setting, TimeEntry
 from .security import hash_pin, verify_pin
 
 settings = get_settings()
@@ -168,13 +169,55 @@ def configure_from_setting(setting: Optional[Setting]) -> None:
     configure_engines(primary_url, secondary_url)
 
 
-def _validate_admin_pin(session: Session, pin: str) -> Setting:
+def _get_singleton_setting(session: Session) -> Setting:
     setting = session.scalar(select(Setting))
-    if not setting or not setting.pin_hash:
-        raise HTTPException(status_code=400, detail="לא הוגדר קוד PIN לניהול")
-    if not verify_pin(pin, setting.pin_hash):
-        raise HTTPException(status_code=403, detail="קוד ה-PIN שגוי")
+    if not setting:
+        raise HTTPException(status_code=400, detail="לא נמצאו נתוני הגדרות")
     return setting
+
+
+def _validate_admin_pin(session: Session, admin_id: int, pin: str) -> tuple[Setting, AdminAccount]:
+    admin = session.get(AdminAccount, admin_id)
+    if not admin or not admin.active:
+        raise HTTPException(status_code=403, detail="פרטי הניהול שגויים")
+    if not verify_pin(pin, admin.pin_hash):
+        raise HTTPException(status_code=403, detail="קוד ה-PIN שגוי")
+    setting = _get_singleton_setting(session)
+    return setting, admin
+
+
+def _record_admin_audit(session: Session, admin: AdminAccount, action: str, details: Optional[dict] = None) -> None:
+    payload = json.dumps(details, ensure_ascii=False) if details else None
+    entry = AdminAuditLog(admin_id=admin.id, action=action, details=payload)
+    session.add(entry)
+
+
+def _sync_setting_pin_hash(session: Session) -> None:
+    setting = session.scalar(select(Setting))
+    if not setting:
+        return
+    primary_admin = session.scalar(
+        select(AdminAccount)
+        .where(AdminAccount.active.is_(True))
+        .order_by(AdminAccount.created_at.asc())
+    )
+    if not primary_admin:
+        primary_admin = session.scalar(select(AdminAccount).order_by(AdminAccount.created_at.asc()))
+    setting.pin_hash = primary_admin.pin_hash if primary_admin else None
+
+
+def _serialize_audit_entry(entry: AdminAuditLog) -> schemas.AdminAuditLogEntry:
+    try:
+        details = json.loads(entry.details) if entry.details else None
+    except json.JSONDecodeError:
+        details = {"raw": entry.details}
+    return schemas.AdminAuditLogEntry(
+        id=entry.id,
+        admin_id=entry.admin_id,
+        action=entry.action,
+        details=details,
+        created_at=entry.created_at,
+    )
 
 
 def ensure_legacy_schema(engine) -> None:
@@ -221,6 +264,62 @@ def ensure_legacy_schema(engine) -> None:
             if "id_number" not in employee_columns:
                 conn.execute(text("ALTER TABLE employees ADD COLUMN id_number VARCHAR(32)"))
                 conn.execute(text("ALTER TABLE employees ADD UNIQUE KEY uq_employees_id_number (id_number)"))
+        created_admin_accounts = False
+        if "admin_accounts" not in table_names:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE admin_accounts (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(120) NOT NULL UNIQUE,
+                        pin_hash VARCHAR(255) NOT NULL,
+                        active BOOLEAN NOT NULL DEFAULT 1,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL
+                    )
+                    """
+                )
+            )
+            created_admin_accounts = True
+        if "admin_audit_logs" not in table_names:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE admin_audit_logs (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        admin_id INT NOT NULL,
+                        action VARCHAR(120) NOT NULL,
+                        details TEXT NULL,
+                        created_at DATETIME NOT NULL,
+                        CONSTRAINT fk_admin_audit_admin
+                            FOREIGN KEY (admin_id) REFERENCES admin_accounts(id)
+                            ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+        if created_admin_accounts or "admin_accounts" in table_names:
+            admin_count = conn.execute(text("SELECT COUNT(*) FROM admin_accounts")).scalar() or 0
+            if admin_count == 0 and "settings" in table_names:
+                row = conn.execute(
+                    text("SELECT pin_hash FROM settings WHERE pin_hash IS NOT NULL AND pin_hash <> '' ORDER BY id LIMIT 1")
+                ).first()
+                if row and row[0]:
+                    timestamp = dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO admin_accounts (name, pin_hash, active, created_at, updated_at)
+                            VALUES (:name, :pin_hash, 1, :created_at, :updated_at)
+                            """
+                        ),
+                        {
+                            "name": "Primary Admin",
+                            "pin_hash": row[0],
+                            "created_at": timestamp,
+                            "updated_at": timestamp,
+                        },
+                    )
 
 
 def populate_setting_defaults(setting: Setting) -> None:
@@ -762,7 +861,9 @@ def add_manual_entry(employee_id: int, payload: schemas.ManualEntryCreate, db: S
 def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Session = Depends(get_db)):
     if not payload.pin:
         raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
-    setting = _validate_admin_pin(db, payload.pin)
+    if not payload.admin_id:
+        raise HTTPException(status_code=400, detail="יש להזין מזהה מנהל")
+    setting, admin = _validate_admin_pin(db, payload.admin_id, payload.pin)
     if setting.schema_version < SCHEMA_VERSION:
         raise HTTPException(status_code=409, detail="גרסת הסכימה בבסיס הנתונים ישנה. אנא הריצו יצירת/עדכון סכימה במסך ההגדרות לפני עריכת משמרות.")
 
@@ -786,6 +887,13 @@ def update_time_entry(entry_id: int, payload: schemas.TimeEntryUpdate, db: Sessi
     entry.is_manual = True
     db.flush()
 
+    _record_admin_audit(
+        db,
+        admin,
+        "time_entries.update",
+        {"entry_id": entry.id, "employee_id": entry.employee_id},
+    )
+
     return schemas.ManualEntryOut(
         id=entry.id,
         employee_id=entry.employee_id,
@@ -803,7 +911,9 @@ def delete_time_entry(
 ):
     if not payload.pin:
         raise HTTPException(status_code=400, detail="יש להזין קוד PIN")
-    setting = _validate_admin_pin(db, payload.pin)
+    if not payload.admin_id:
+        raise HTTPException(status_code=400, detail="יש להזין מזהה מנהל")
+    setting, admin = _validate_admin_pin(db, payload.admin_id, payload.pin)
     if setting.schema_version < SCHEMA_VERSION:
         raise HTTPException(status_code=409, detail="גרסת הסכימה בבסיס הנתונים ישנה. אנא הריצו יצירת/עדכון סכימה במסך ההגדרות לפני מחיקת משמרות.")
 
@@ -812,6 +922,12 @@ def delete_time_entry(
         raise HTTPException(status_code=404, detail="רשומת המשמרת לא נמצאה")
 
     db.delete(entry)
+    _record_admin_audit(
+        db,
+        admin,
+        "time_entries.delete",
+        {"entry_id": entry_id},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -1215,10 +1331,100 @@ def export_summary_report(
     )
 
 
+@api_router.get("/admins", response_model=list[schemas.AdminSummary])
+def list_admins():
+    with session_scope() as session:
+        admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+        return admins
+
+
+@api_router.post("/admins", response_model=schemas.AdminSummary, status_code=status.HTTP_201_CREATED)
+def create_admin(payload: schemas.AdminCreateRequest):
+    with session_scope() as session:
+        _, requestor = _validate_admin_pin(session, payload.requestor_admin_id, payload.requestor_pin)
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="שם המנהל נדרש")
+        lower_name = name.lower()
+        existing = session.scalar(select(AdminAccount).where(func.lower(AdminAccount.name) == lower_name))
+        if existing:
+            raise HTTPException(status_code=400, detail="שם המנהל כבר בשימוש")
+        admin = AdminAccount(name=name, pin_hash=hash_pin(payload.pin), active=True)
+        session.add(admin)
+        session.flush()
+        _sync_setting_pin_hash(session)
+        _record_admin_audit(session, requestor, "admins.create", {"admin_id": admin.id})
+        return admin
+
+
+@api_router.put("/admins/{admin_id}", response_model=schemas.AdminSummary)
+def update_admin(admin_id: int, payload: schemas.AdminUpdateRequest):
+    with session_scope() as session:
+        _, requestor = _validate_admin_pin(session, payload.requestor_admin_id, payload.requestor_pin)
+        admin = session.get(AdminAccount, admin_id)
+        if not admin:
+            raise HTTPException(status_code=404, detail="מנהל לא נמצא")
+
+        changed: dict[str, object] = {}
+
+        if payload.name is not None:
+            new_name = payload.name.strip()
+            if not new_name:
+                raise HTTPException(status_code=400, detail="שם המנהל לא יכול להיות ריק")
+            duplicate = session.scalar(
+                select(AdminAccount)
+                .where(func.lower(AdminAccount.name) == new_name.lower())
+                .where(AdminAccount.id != admin_id)
+            )
+            if duplicate:
+                raise HTTPException(status_code=400, detail="שם המנהל כבר בשימוש")
+            admin.name = new_name
+            changed["name"] = new_name
+
+        if payload.new_pin:
+            admin.pin_hash = hash_pin(payload.new_pin)
+            changed["pin"] = True
+
+        if payload.active is not None:
+            admin.active = payload.active
+            changed["active"] = payload.active
+
+        session.flush()
+        _sync_setting_pin_hash(session)
+        _record_admin_audit(
+            session,
+            requestor,
+            "admins.update",
+            {"admin_id": admin.id, **changed} if changed else {"admin_id": admin.id},
+        )
+        return admin
+
+
+@api_router.get("/admins/{admin_id}/audit", response_model=list[schemas.AdminAuditLogEntry])
+def list_admin_audit(admin_id: int, limit: int = 50):
+    limit = max(1, min(limit, 500))
+    with session_scope() as session:
+        admin = session.get(AdminAccount, admin_id)
+        if not admin:
+            raise HTTPException(status_code=404, detail="מנהל לא נמצא")
+        entries = (
+            session.execute(
+                select(AdminAuditLog)
+                .where(AdminAuditLog.admin_id == admin_id)
+                .order_by(AdminAuditLog.created_at.desc())
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        return [_serialize_audit_entry(entry) for entry in entries]
+
+
 @api_router.get("/settings", response_model=schemas.SettingsOut)
 def get_settings_endpoint(db: Session = Depends(get_db)):
     schema_ok = False
     setting: Optional[Setting] = None
+    admins: list[AdminAccount] = []
     try:
         engine = get_engine()
         ensure_legacy_schema(engine)
@@ -1245,6 +1451,8 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
                 )
                 session.add(setting)
                 session.flush()
+            admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+            _sync_setting_pin_hash(session)
         populate_setting_defaults(setting)
         schema_ok = setting.schema_version == SCHEMA_VERSION
     except (RuntimeError, OperationalError):
@@ -1267,10 +1475,11 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
             theme_color="#1b3aa6",
         )
         schema_ok = False
+        admins = []
 
     return schemas.SettingsOut(
         currency=setting.currency,
-        pin_set=bool(setting.pin_hash),
+        pin_set=any(admin.active for admin in admins),
         db_host=setting.db_host,
         db_port=setting.db_port,
         db_user=setting.db_user,
@@ -1287,6 +1496,7 @@ def get_settings_endpoint(db: Session = Depends(get_db)):
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
         show_clock_device_ids=bool(setting.show_clock_device_ids),
+        admins=admins,
     )
 
 
@@ -1301,6 +1511,9 @@ def update_settings(payload: schemas.SettingsUpdate):
         trimmed = value.strip()
         return trimmed or None
 
+    if not payload.current_pin:
+        raise HTTPException(status_code=400, detail="יש להזין PIN נוכחי לצורך עדכון")
+
     with session_scope() as session:
         setting = session.scalar(select(Setting))
         if not setting:
@@ -1308,29 +1521,44 @@ def update_settings(payload: schemas.SettingsUpdate):
             session.add(setting)
             session.flush()
 
-        if payload.currency:
+        setting, admin = _validate_admin_pin(session, payload.admin_id, payload.current_pin)
+
+        changed_fields: set[str] = set()
+
+        if payload.currency and payload.currency != setting.currency:
             setting.currency = payload.currency
+            changed_fields.add("currency")
 
         if payload.db_host is not None:
             setting.db_host = normalize(payload.db_host)
+            changed_fields.add("db_host")
         if payload.db_port is not None:
             setting.db_port = payload.db_port
+            changed_fields.add("db_port")
         if payload.db_user is not None:
             setting.db_user = normalize(payload.db_user)
+            changed_fields.add("db_user")
         if payload.db_password is not None:
             setting.db_password = payload.db_password
+            changed_fields.add("db_password")
         if payload.secondary_db_host is not None:
             setting.secondary_db_host = normalize(payload.secondary_db_host)
+            changed_fields.add("secondary_db_host")
         if payload.secondary_db_port is not None:
             setting.secondary_db_port = payload.secondary_db_port
+            changed_fields.add("secondary_db_port")
         if payload.secondary_db_user is not None:
             setting.secondary_db_user = normalize(payload.secondary_db_user)
+            changed_fields.add("secondary_db_user")
         if payload.secondary_db_password is not None:
             setting.secondary_db_password = payload.secondary_db_password
+            changed_fields.add("secondary_db_password")
         if payload.primary_db_active is not None:
             setting.primary_db_active = payload.primary_db_active
+            changed_fields.add("primary_db_active")
         if payload.secondary_db_active is not None:
             setting.secondary_db_active = payload.secondary_db_active
+            changed_fields.add("secondary_db_active")
 
         if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
             raise HTTPException(status_code=400, detail="יש להפעיל לפחות מסד נתונים אחד")
@@ -1339,21 +1567,21 @@ def update_settings(payload: schemas.SettingsUpdate):
             if payload.primary_database not in DATABASE_TARGETS:
                 raise HTTPException(status_code=400, detail="בחירה לא תקינה של מסד נתונים ראשי")
             setting.primary_database = payload.primary_database
+            changed_fields.add("primary_database")
 
         if payload.brand_name is not None:
             setting.brand_name = payload.brand_name
+            changed_fields.add("brand_name")
         if payload.theme_color is not None:
             setting.theme_color = payload.theme_color
+            changed_fields.add("theme_color")
         if payload.show_clock_device_ids is not None:
             setting.show_clock_device_ids = payload.show_clock_device_ids
+            changed_fields.add("show_clock_device_ids")
 
         if payload.new_pin:
-            if setting.pin_hash:
-                if not payload.current_pin:
-                    raise HTTPException(status_code=400, detail="יש להזין PIN נוכחי כדי לעדכן")
-                if not verify_pin(payload.current_pin, setting.pin_hash):
-                    raise HTTPException(status_code=403, detail="קוד ה-PIN הנוכחי שגוי")
-            setting.pin_hash = hash_pin(payload.new_pin)
+            admin.pin_hash = hash_pin(payload.new_pin)
+            changed_fields.add("admin_pin")
 
         if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
             raise HTTPException(status_code=400, detail="לא הוגדרו פרטי חיבור למסד הנתונים המשני")
@@ -1364,12 +1592,22 @@ def update_settings(payload: schemas.SettingsUpdate):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+        admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+        _sync_setting_pin_hash(session)
+
+        _record_admin_audit(
+            session,
+            admin,
+            "settings.update",
+            {"fields": sorted(changed_fields)} if changed_fields else None,
+        )
+
         schema_ok = setting.schema_version == SCHEMA_VERSION
         session.flush()
 
         return schemas.SettingsOut(
             currency=setting.currency,
-            pin_set=bool(setting.pin_hash),
+            pin_set=any(candidate.active for candidate in admins),
             db_host=setting.db_host,
             db_port=setting.db_port,
             db_user=setting.db_user,
@@ -1386,6 +1624,7 @@ def update_settings(payload: schemas.SettingsUpdate):
             brand_name=setting.brand_name,
             theme_color=setting.theme_color,
             show_clock_device_ids=bool(setting.show_clock_device_ids),
+            admins=admins,
         )
 
 
@@ -1400,6 +1639,13 @@ def export_settings(db: Session = Depends(get_db)):
         if not setting:
             raise HTTPException(status_code=400, detail="אין נתוני הגדרות לשמירה במסד הנתונים.")
         populate_setting_defaults(setting)
+        admin_records = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
+    active_admin = next((candidate for candidate in admin_records if candidate.active), admin_records[0] if admin_records else None)
+    pin_hash = active_admin.pin_hash if active_admin else None
+    admin_exports = [
+        schemas.AdminExportDefinition(name=admin.name, pin_hash=admin.pin_hash, active=admin.active)
+        for admin in admin_records
+    ]
     return schemas.SettingsExport(
         currency=setting.currency,
         db_host=setting.db_host,
@@ -1414,10 +1660,11 @@ def export_settings(db: Session = Depends(get_db)):
         primary_db_active=bool(setting.primary_db_active),
         secondary_db_active=bool(setting.secondary_db_active),
         schema_version=setting.schema_version,
-        pin_hash=setting.pin_hash,
+        pin_hash=pin_hash,
         brand_name=setting.brand_name,
         theme_color=setting.theme_color,
         show_clock_device_ids=bool(setting.show_clock_device_ids),
+        admins=admin_exports,
     )
 
 
@@ -1433,47 +1680,109 @@ def import_settings(payload: schemas.SettingsImport):
             session.add(setting)
             session.flush()
 
+        existing_admins = session.scalars(select(AdminAccount).order_by(AdminAccount.id)).all()
+        requestor_admin: Optional[AdminAccount] = None
+        if existing_admins:
+            if not payload.requestor_admin_id or not payload.requestor_pin:
+                raise HTTPException(status_code=403, detail="נדרשת הזדהות מנהל לצורך יבוא הגדרות")
+            _, requestor_admin = _validate_admin_pin(session, payload.requestor_admin_id, payload.requestor_pin)
+
+        changed_fields: set[str] = set()
+
         if payload.currency is not None:
             setting.currency = payload.currency
+            changed_fields.add("currency")
         if payload.db_host is not None:
             setting.db_host = payload.db_host.strip() if payload.db_host else None
+            changed_fields.add("db_host")
         if payload.db_port is not None:
             setting.db_port = payload.db_port
+            changed_fields.add("db_port")
         if payload.db_user is not None:
             setting.db_user = payload.db_user.strip() if payload.db_user else None
+            changed_fields.add("db_user")
         if payload.db_password is not None:
             setting.db_password = payload.db_password
+            changed_fields.add("db_password")
         if payload.secondary_db_host is not None:
             setting.secondary_db_host = payload.secondary_db_host.strip() if payload.secondary_db_host else None
+            changed_fields.add("secondary_db_host")
         if payload.secondary_db_port is not None:
             setting.secondary_db_port = payload.secondary_db_port
+            changed_fields.add("secondary_db_port")
         if payload.secondary_db_user is not None:
             setting.secondary_db_user = payload.secondary_db_user.strip() if payload.secondary_db_user else None
+            changed_fields.add("secondary_db_user")
         if payload.secondary_db_password is not None:
             setting.secondary_db_password = payload.secondary_db_password
+            changed_fields.add("secondary_db_password")
         if payload.primary_db_active is not None:
             setting.primary_db_active = payload.primary_db_active
+            changed_fields.add("primary_db_active")
         if payload.secondary_db_active is not None:
             setting.secondary_db_active = payload.secondary_db_active
+            changed_fields.add("secondary_db_active")
         if not connection_active(setting, "primary") and not connection_active(setting, "secondary"):
             setting.primary_db_active = True
             setting.secondary_db_active = False
 
         if payload.primary_database is not None and payload.primary_database in DATABASE_TARGETS:
             setting.primary_database = payload.primary_database
+            changed_fields.add("primary_database")
         if payload.schema_version is not None:
             setting.schema_version = payload.schema_version
+            changed_fields.add("schema_version")
         if payload.brand_name is not None:
             setting.brand_name = payload.brand_name
+            changed_fields.add("brand_name")
         if payload.theme_color is not None:
             setting.theme_color = payload.theme_color
+            changed_fields.add("theme_color")
         if payload.show_clock_device_ids is not None:
             setting.show_clock_device_ids = payload.show_clock_device_ids
+            changed_fields.add("show_clock_device_ids")
 
-        if payload.pin:
-            setting.pin_hash = hash_pin(payload.pin)
-        elif payload.pin_hash:
-            setting.pin_hash = payload.pin_hash
+        admin_definitions_applied = False
+        if payload.admins:
+            admin_definitions_applied = True
+            existing_by_name = {admin.name: admin for admin in existing_admins}
+            for definition in payload.admins:
+                hashed = definition.pin_hash or (hash_pin(definition.pin) if definition.pin else None)
+                if not hashed:
+                    raise HTTPException(status_code=400, detail=f"Admin '{definition.name}' חייב לכלול PIN או pin_hash")
+                admin_obj = existing_by_name.get(definition.name)
+                if admin_obj:
+                    admin_obj.pin_hash = hashed
+                    if definition.active is not None:
+                        admin_obj.active = bool(definition.active)
+                else:
+                    admin_obj = AdminAccount(
+                        name=definition.name,
+                        pin_hash=hashed,
+                        active=bool(definition.active) if definition.active is not None else True,
+                    )
+                    session.add(admin_obj)
+                    session.flush()
+                    existing_admins.append(admin_obj)
+                    existing_by_name[definition.name] = admin_obj
+        elif payload.pin or payload.pin_hash:
+            admin_definitions_applied = True
+            hashed_pin = payload.pin_hash or hash_pin(payload.pin)
+            primary_admin = session.scalar(select(AdminAccount).where(AdminAccount.name == "Primary Admin"))
+            if not primary_admin:
+                primary_admin = AdminAccount(name="Primary Admin", pin_hash=hashed_pin, active=True)
+                session.add(primary_admin)
+                session.flush()
+                existing_admins.append(primary_admin)
+            else:
+                primary_admin.pin_hash = hashed_pin
+                if not primary_admin.active:
+                    primary_admin.active = True
+
+        if admin_definitions_applied:
+            changed_fields.add("admins")
+
+        existing_admins = session.scalars(select(AdminAccount).order_by(AdminAccount.name)).all()
 
         if setting.primary_database == "secondary" and not connection_configured(setting, "secondary"):
             setting.primary_database = "primary"
@@ -1484,12 +1793,22 @@ def import_settings(payload: schemas.SettingsImport):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+        _sync_setting_pin_hash(session)
+
+        if requestor_admin:
+            _record_admin_audit(
+                session,
+                requestor_admin,
+                "settings.import",
+                {"fields": sorted(changed_fields)} if changed_fields else None,
+            )
+
         schema_ok = setting.schema_version == SCHEMA_VERSION
         session.flush()
 
         return schemas.SettingsOut(
             currency=setting.currency,
-            pin_set=bool(setting.pin_hash),
+            pin_set=any(candidate.active for candidate in existing_admins),
             db_host=setting.db_host,
             db_port=setting.db_port,
             db_user=setting.db_user,
@@ -1506,16 +1825,19 @@ def import_settings(payload: schemas.SettingsImport):
             brand_name=setting.brand_name,
             theme_color=setting.theme_color,
             show_clock_device_ids=bool(setting.show_clock_device_ids),
+            admins=existing_admins,
         )
 
 
 @api_router.post("/auth/verify-pin", response_model=schemas.PinVerifyResponse)
 def verify_pin_endpoint(payload: schemas.PinVerifyRequest):
-    setting = _load_setting()
-    if not setting or not setting.pin_hash:
-        raise HTTPException(status_code=404, detail="לא הוגדר קוד PIN")
-    if not verify_pin(payload.pin, setting.pin_hash):
-        raise HTTPException(status_code=403, detail="קוד PIN שגוי")
+    with session_scope() as session:
+        admin = session.get(AdminAccount, payload.admin_id)
+        if not admin or not admin.active:
+            raise HTTPException(status_code=403, detail="פרטי הניהול שגויים")
+        if not verify_pin(payload.pin, admin.pin_hash):
+            raise HTTPException(status_code=403, detail="קוד PIN שגוי")
+        _record_admin_audit(session, admin, "auth.verify", None)
     return schemas.PinVerifyResponse(ok=True)
 
 

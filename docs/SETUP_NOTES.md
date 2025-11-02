@@ -34,6 +34,8 @@
 - Brand name: `העסק שלי`
 - PIN must be set via Settings UI or `PUT /settings` before accessing admin screens.
 - Settings API: `GET/PUT /settings`, `POST /settings/import`, `GET /settings/export`.
+- Multi-admin support: `GET /admins` lists accounts, `POST /admins` creates a new admin (requires an existing admin's credentials), `PUT /admins/{id}` updates name/PIN/active state, and `GET /admins/{id}/audit` returns the recent audit trail for that admin.
+- PIN verification and privileged operations now require both `admin_id` and the corresponding `pin` (e.g. `PUT /time-entries/{id}`, `DELETE /time-entries/{id}`, `POST /auth/verify-pin`).
 
 ## Frontend Access
 - Clock-in page at `/` uses masked input and auto-detects state via `/clock/status`.

@@ -4,7 +4,18 @@ import datetime as dt
 
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -71,3 +82,37 @@ class Setting(Base):
     secondary_db_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     show_clock_device_ids: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+
+
+class AdminAccount(Base):
+    __tablename__ = "admin_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=dt.datetime.utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=False),
+        nullable=False,
+        default=dt.datetime.utcnow,
+        onupdate=dt.datetime.utcnow,
+    )
+
+    audit_logs: Mapped[list["AdminAuditLog"]] = relationship(
+        "AdminAuditLog",
+        back_populates="admin",
+        cascade="all, delete-orphan",
+    )
+
+
+class AdminAuditLog(Base):
+    __tablename__ = "admin_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admin_accounts.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=dt.datetime.utcnow)
+
+    admin: Mapped[AdminAccount] = relationship("AdminAccount", back_populates="audit_logs")

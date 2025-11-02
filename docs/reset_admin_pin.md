@@ -1,6 +1,6 @@
 ## Admin PIN Recovery Runbook
 
-Use this procedure when the HubClock admin PIN is lost and you have shell access to the host or maintenance container. The steps below update the PIN directly in the database without exposing the PIN hash in version control.
+Use this procedure when the HubClock admin PIN is lost and you have shell access to the host or maintenance container. The steps below update (or create) an admin account in the database without exposing the PIN hash in version control.
 
 ### Prerequisites
 - Access to the deployment host (SSH, console, or maintenance container).
@@ -16,7 +16,7 @@ Use this procedure when the HubClock admin PIN is lost and you have shell access
    ```bash
    bash scripts/reset_admin_pin.sh
    ```
-   - The script loads defaults (or `.env` overrides), prompts twice for the new PIN, and enforces the standard length (4–12 characters).
+   - The script loads defaults (or `.env` overrides), prompts twice for the new PIN, enforces the standard length (4–12 characters), and then lets you choose which admin to update or create.
 3. **Optional flags**
    - Set `ENV_FILE=/path/to/custom.env` before running if the configuration file is not at the project root.
    - Override connection details inline, for example:
@@ -28,6 +28,6 @@ Use this procedure when the HubClock admin PIN is lost and you have shell access
    - Log the recovery event in your operational records.
 
 ### Notes
-- The script updates the existing `settings` row; if none is found it exits without making changes so you can initialise the application first.
+- The script manages entries in the `admin_accounts` table (creating a new admin when needed) and keeps accounts active after a reset.
 - If the database connection fails, ensure the expected credentials are present (either exported or in the `.env` file) before retrying.
 - Rotate any temporary automation secrets used during recovery and remove them from shell history.

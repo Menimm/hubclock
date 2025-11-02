@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -131,6 +131,54 @@ class DailyReportResponse(BaseModel):
     employees: list[DailyEmployeeReport]
 
 
+class AdminSummary(BaseModel):
+    id: int
+    name: str
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class AdminCreateRequest(BaseModel):
+    requestor_admin_id: int
+    requestor_pin: str = Field(..., min_length=4, max_length=12)
+    name: str = Field(..., max_length=120)
+    pin: str = Field(..., min_length=4, max_length=12)
+
+
+class AdminUpdateRequest(BaseModel):
+    requestor_admin_id: int
+    requestor_pin: str = Field(..., min_length=4, max_length=12)
+    name: Optional[str] = Field(None, max_length=120)
+    new_pin: Optional[str] = Field(None, min_length=4, max_length=12)
+    active: Optional[bool] = None
+
+
+class AdminAuditLogEntry(BaseModel):
+    id: int
+    admin_id: int
+    action: str
+    details: Optional[dict[str, Any]] = None
+    created_at: dt.datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminImportDefinition(BaseModel):
+    name: str = Field(..., max_length=120)
+    pin: Optional[str] = Field(None, min_length=4, max_length=12)
+    pin_hash: Optional[str] = None
+    active: Optional[bool] = True
+
+
+class AdminExportDefinition(BaseModel):
+    name: str
+    pin_hash: Optional[str] = None
+    active: bool
+
+
 class SettingsOut(BaseModel):
     currency: str
     pin_set: bool
@@ -150,9 +198,11 @@ class SettingsOut(BaseModel):
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
     show_clock_device_ids: bool = True
+    admins: list[AdminSummary] = Field(default_factory=list)
 
 
 class SettingsUpdate(BaseModel):
+    admin_id: int
     currency: Optional[str] = Field(None, max_length=8)
     current_pin: Optional[str] = Field(None, min_length=4, max_length=12)
     new_pin: Optional[str] = Field(None, min_length=4, max_length=12)
@@ -188,6 +238,7 @@ class DBTestRequest(BaseModel):
 
 
 class PinVerifyRequest(BaseModel):
+    admin_id: int
     pin: str = Field(..., min_length=4, max_length=12)
 
 
@@ -213,9 +264,12 @@ class SettingsExport(BaseModel):
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
     show_clock_device_ids: Optional[bool] = None
+    admins: list[AdminExportDefinition] = Field(default_factory=list)
 
 
 class SettingsImport(BaseModel):
+    requestor_admin_id: Optional[int] = None
+    requestor_pin: Optional[str] = Field(None, min_length=4, max_length=12)
     currency: Optional[str] = None
     db_host: Optional[str] = None
     db_port: Optional[int] = None
@@ -234,6 +288,7 @@ class SettingsImport(BaseModel):
     brand_name: Optional[str] = None
     theme_color: Optional[str] = None
     show_clock_device_ids: Optional[bool] = None
+    admins: list[AdminImportDefinition] = Field(default_factory=list)
 
 
 class EmployeeImport(BaseModel):
@@ -254,12 +309,14 @@ class TimeEntryImport(BaseModel):
 
 
 class TimeEntryUpdate(BaseModel):
+    admin_id: int
     clock_in: Optional[dt.datetime] = None
     clock_out: Optional[dt.datetime] = None
     pin: str = Field(..., min_length=4, max_length=12)
 
 
 class TimeEntryDelete(BaseModel):
+    admin_id: int
     pin: str = Field(..., min_length=4, max_length=12)
 
 

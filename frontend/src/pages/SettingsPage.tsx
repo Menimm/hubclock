@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api, formatApiError } from "../api/client";
 import { useSettings } from "../context/SettingsContext";
+import type { AdminSummary } from "../context/SettingsContext";
+import { useAuth } from "../context/AuthContext";
 
 type StatusMessage = { kind: "success" | "error"; message: string } | null;
 type SchemaTarget = "active" | "primary" | "secondary" | "both";
@@ -16,6 +18,7 @@ const SettingsPage: React.FC = () => {
   const {
     currency,
     pin_set,
+    admins,
     db_host,
     db_port,
     db_user,
@@ -35,6 +38,8 @@ const SettingsPage: React.FC = () => {
     refresh,
     setLocal
   } = useSettings();
+  const { selectedAdminId, setSelectedAdminId } = useAuth();
+
   const [currencyValue, setCurrencyValue] = useState(currency);
   const [primaryHost, setPrimaryHost] = useState(db_host ?? "");
   const [primaryPort, setPrimaryPort] = useState(db_port ? String(db_port) : "");
@@ -50,16 +55,41 @@ const SettingsPage: React.FC = () => {
   const [brandName, setBrandName] = useState(brand_name ?? "העסק שלי");
   const [themeColor, setThemeColor] = useState(themeColorSetting ?? "#1b3aa6");
   const [showClockDevices, setShowClockDevices] = useState<boolean>(show_clock_device_ids ?? true);
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
+  const activeAdmins = useMemo(() => admins.filter((admin) => admin.active), [admins]);
+  const effectiveAdmins = useMemo(() => (activeAdmins.length > 0 ? activeAdmins : admins), [activeAdmins, admins]);
+  const [actingAdminId, setActingAdminId] = useState<number | "">(() => {
+    if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
+      return selectedAdminId;
+    }
+    const fallback = effectiveAdmins[0]?.id;
+    return fallback ?? "";
+  });
+  const [adminPinEntry, setAdminPinEntry] = useState("");
   const [generalStatus, setGeneralStatus] = useState<StatusMessage>(null);
   const [dbStatus, setDbStatus] = useState<StatusMessage>(null);
-  const [pinStatus, setPinStatus] = useState<StatusMessage>(null);
+  const [adminStatus, setAdminStatus] = useState<StatusMessage>(null);
   const [importStatus, setImportStatus] = useState<StatusMessage>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [adminEdits, setAdminEdits] = useState<Record<number, { name?: string; active?: boolean; newPin?: string }>>({});
+  const [newAdminName, setNewAdminName] = useState("");
+  const [newAdminPin, setNewAdminPin] = useState("");
+  const [newAdminPinConfirm, setNewAdminPinConfirm] = useState("");
   const [showPrimaryPassword, setShowPrimaryPassword] = useState(false);
   const [showSecondaryPassword, setShowSecondaryPassword] = useState(false);
   const [schemaTarget, setSchemaTarget] = useState<SchemaTarget>("active");
+
+  useEffect(() => {
+    setAdminEdits((prev) => {
+      const next: Record<number, { name?: string; active?: boolean; newPin?: string }> = {};
+      admins.forEach((admin) => {
+        if (prev[admin.id]) {
+          next[admin.id] = prev[admin.id];
+        }
+      });
+      return next;
+    });
+  }, [admins]);
   useEffect(() => {
     setCurrencyValue(currency);
   }, [currency]);
@@ -96,23 +126,180 @@ const SettingsPage: React.FC = () => {
     show_clock_device_ids
   ]);
 
+  useEffect(() => {
+    if (!effectiveAdmins.length) {
+      setActingAdminId("");
+      return;
+    }
+    if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
+      setActingAdminId(selectedAdminId);
+      return;
+    }
+    setActingAdminId((prev) => {
+      if (typeof prev === "number" && effectiveAdmins.some((admin) => admin.id === prev)) {
+        return prev;
+      }
+      return effectiveAdmins[0].id;
+    });
+  }, [effectiveAdmins, selectedAdminId]);
+
+  useEffect(() => {
+    if (typeof actingAdminId === "number") {
+      setSelectedAdminId(actingAdminId);
+    }
+  }, [actingAdminId, setSelectedAdminId]);
+
+  const updateAdminEdit = (id: number, updates: Partial<{ name: string; active: boolean; newPin: string }>) => {
+    setAdminEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...updates } }));
+  };
+
+  const clearAdminEdit = (id: number) => {
+    setAdminEdits((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const resolveCredentials = (
+    setStatus: React.Dispatch<React.SetStateAction<StatusMessage>>
+  ): { adminId: number; pin: string } | null => {
+    if (!effectiveAdmins.length) {
+      setStatus({ kind: "error", message: "אין מנהלי מערכת פעילים. צרו או הפעילו מנהל לפני ביצוע פעולה זו." });
+      return null;
+    }
+    if (actingAdminId === "" || actingAdminId === null) {
+      setStatus({ kind: "error", message: "בחרו מנהל מבצע מהרשימה." });
+      return null;
+    }
+    if (!adminPinEntry.trim()) {
+      setStatus({ kind: "error", message: "הזינו את קוד ה-PIN של המנהל המבצע." });
+      return null;
+    }
+    return { adminId: Number(actingAdminId), pin: adminPinEntry.trim() };
+  };
+
+  const handleAdminSave = async (admin: AdminSummary) => {
+    setAdminStatus(null);
+    const credentials = resolveCredentials(setAdminStatus);
+    if (!credentials) {
+      return;
+    }
+    const edits = adminEdits[admin.id] ?? {};
+    const nameCandidate = edits.name !== undefined ? edits.name.trim() : undefined;
+    if (nameCandidate !== undefined && nameCandidate.length === 0) {
+      setAdminStatus({ kind: "error", message: "שם המנהל לא יכול להיות ריק" });
+      return;
+    }
+    if (edits.newPin && (edits.newPin.trim().length < 4 || edits.newPin.trim().length > 12)) {
+      setAdminStatus({ kind: "error", message: "PIN חדש חייב להיות באורך שבין 4 ל-12 תווים" });
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      requestor_admin_id: credentials.adminId,
+      requestor_pin: credentials.pin
+    };
+    let hasChanges = false;
+    if (nameCandidate !== undefined && nameCandidate !== admin.name) {
+      payload.name = nameCandidate;
+      hasChanges = true;
+    }
+    if (edits.active !== undefined && edits.active !== admin.active) {
+      payload.active = edits.active;
+      hasChanges = true;
+    }
+    if (edits.newPin && edits.newPin.trim().length > 0) {
+      payload.new_pin = edits.newPin.trim();
+      hasChanges = true;
+    }
+    if (!hasChanges) {
+      setAdminStatus({ kind: "error", message: `לא בוצעו שינויים עבור \"${admin.name}\"` });
+      return;
+    }
+    setIsSavingAdmin(true);
+    try {
+      await api.put(`/admins/${admin.id}`, payload);
+      const updatedName = (payload.name as string | undefined) ?? admin.name;
+      setAdminStatus({ kind: "success", message: `פרטי המנהל \"${updatedName}\" עודכנו` });
+      clearAdminEdit(admin.id);
+      setAdminPinEntry("");
+      await refresh();
+    } catch (error) {
+      setAdminStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
+  const handleCreateAdmin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAdminStatus(null);
+    const trimmedName = newAdminName.trim();
+    const trimmedPin = newAdminPin.trim();
+    if (!trimmedName) {
+      setAdminStatus({ kind: "error", message: "שם המנהל נדרש" });
+      return;
+    }
+    if (trimmedPin.length < 4 || trimmedPin.length > 12) {
+      setAdminStatus({ kind: "error", message: "קוד ה-PIN חייב להכיל בין 4 ל-12 תווים" });
+      return;
+    }
+    if (trimmedPin !== newAdminPinConfirm.trim()) {
+      setAdminStatus({ kind: "error", message: "אימות ה-PIN אינו תואם" });
+      return;
+    }
+    const credentials = resolveCredentials(setAdminStatus);
+    if (!credentials) {
+      return;
+    }
+    setIsSavingAdmin(true);
+    try {
+      await api.post("/admins", {
+        requestor_admin_id: credentials.adminId,
+        requestor_pin: credentials.pin,
+        name: trimmedName,
+        pin: trimmedPin
+      });
+      setAdminStatus({ kind: "success", message: `המנהל \"${trimmedName}\" נוצר בהצלחה` });
+      setNewAdminName("");
+      setNewAdminPin("");
+      setNewAdminPinConfirm("");
+      setAdminPinEntry("");
+      await refresh();
+    } catch (error) {
+      setAdminStatus({ kind: "error", message: formatApiError(error) });
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
   const updateAppearance = async (event: React.FormEvent) => {
     event.preventDefault();
+    setGeneralStatus(null);
+    const credentials = resolveCredentials(setGeneralStatus);
+    if (!credentials) {
+      return;
+    }
     try {
-      setGeneralStatus(null);
-      await api.put("/settings", {
+      const response = await api.put("/settings", {
+        admin_id: credentials.adminId,
+        current_pin: credentials.pin,
         currency: currencyValue,
         theme_color: themeColor,
         brand_name: brandName,
         show_clock_device_ids: showClockDevices
       });
       setGeneralStatus({ kind: "success", message: "ההגדרות נשמרו" });
+      const nextAdmins = response.data.admins ?? admins;
       setLocal({
-        currency: currencyValue,
-        theme_color: themeColor,
-        brand_name: brandName,
-        show_clock_device_ids: showClockDevices
+        currency: response.data.currency ?? currencyValue,
+        theme_color: response.data.theme_color ?? themeColor,
+        brand_name: response.data.brand_name ?? brandName,
+        show_clock_device_ids: response.data.show_clock_device_ids ?? showClockDevices,
+        admins: nextAdmins,
+        pin_set: response.data.pin_set ?? nextAdmins.some((admin) => admin.active)
       });
+      setAdminPinEntry("");
     } catch (error) {
       setGeneralStatus({ kind: "error", message: formatApiError(error) });
     }
@@ -167,45 +354,41 @@ const SettingsPage: React.FC = () => {
         secondary_db_password: secondaryPassword ?? "",
         secondary_db_active: secondaryActive
       };
-      const response = await api.put("/settings", payload);
+      const credentials = resolveCredentials(setDbStatus);
+      if (!credentials) {
+        return;
+      }
+      const response = await api.put("/settings", {
+        admin_id: credentials.adminId,
+        current_pin: credentials.pin,
+        ...payload
+      });
       setDbStatus({ kind: "success", message: "הגדרות מסדי הנתונים נשמרו" });
+      const nextAdmins = response.data.admins ?? admins;
       setLocal({
-        db_host: payload.db_host ?? "",
-        db_port: payload.db_port,
-        db_user: payload.db_user ?? "",
-        db_password: payload.db_password as string,
-        secondary_db_host: payload.secondary_db_host ?? "",
-        secondary_db_port: payload.secondary_db_port,
-        secondary_db_user: payload.secondary_db_user ?? "",
-        secondary_db_password: payload.secondary_db_password as string,
-        primary_db_active: primaryActive,
-        secondary_db_active: secondaryActive,
-        primary_database: primaryChoice,
+        db_host: response.data.db_host ?? payload.db_host ?? "",
+        db_port: response.data.db_port ?? payload.db_port,
+        db_user: response.data.db_user ?? payload.db_user ?? "",
+        db_password: response.data.db_password ?? (payload.db_password as string),
+        secondary_db_host: response.data.secondary_db_host ?? payload.secondary_db_host ?? "",
+        secondary_db_port: response.data.secondary_db_port ?? payload.secondary_db_port,
+        secondary_db_user: response.data.secondary_db_user ?? payload.secondary_db_user ?? "",
+        secondary_db_password:
+          response.data.secondary_db_password ?? (payload.secondary_db_password as string),
+        primary_db_active: response.data.primary_db_active ?? primaryActive,
+        secondary_db_active: response.data.secondary_db_active ?? secondaryActive,
+        primary_database: (response.data.primary_database as typeof primaryChoice) ?? primaryChoice,
         schema_ok: response.data.schema_ok ?? schema_ok,
         schema_version: response.data.schema_version ?? schema_version,
-        show_clock_device_ids: response.data.show_clock_device_ids ?? show_clock_device_ids
+        show_clock_device_ids: response.data.show_clock_device_ids ?? show_clock_device_ids,
+        admins: nextAdmins,
+        pin_set: response.data.pin_set ?? nextAdmins.some((admin) => admin.active)
       });
+      setAdminPinEntry("");
     } catch (error) {
       setDbStatus({ kind: "error", message: formatApiError(error) });
     }
   };
-
-  const updatePin = async (event: React.FormEvent) => {
-    event.preventDefault();
-  try {
-    setPinStatus(null);
-    await api.put("/settings", {
-      current_pin: pin_set ? currentPin : undefined,
-      new_pin: newPin
-    });
-    setPinStatus({ kind: "success", message: "קוד ה-PIN עודכן" });
-    setCurrentPin("");
-    setNewPin("");
-    refresh();
-  } catch (error) {
-    setPinStatus({ kind: "error", message: formatApiError(error) });
-  }
-};
 
   const testDbConnection = async (target: "primary" | "secondary") => {
     try {
@@ -285,10 +468,18 @@ const SettingsPage: React.FC = () => {
     setImportStatus(null);
     const text = await file.text();
     const payload = JSON.parse(text);
-      await api.post("/settings/import", payload);
+    const requestBody = { ...payload };
+    if (admins.length > 0) {
+      const credentials = resolveCredentials(setImportStatus);
+      if (!credentials) {
+        return;
+      }
+      requestBody.requestor_admin_id = credentials.adminId;
+      requestBody.requestor_pin = credentials.pin;
+    }
+      await api.post("/settings/import", requestBody);
       setImportStatus({ kind: "success", message: "ההגדרות נטענו בהצלחה" });
-    setCurrentPin("");
-    setNewPin("");
+    setAdminPinEntry("");
     await refresh();
   } catch (error) {
     setImportStatus({ kind: "error", message: formatApiError(error) });
@@ -310,6 +501,179 @@ const SettingsPage: React.FC = () => {
       )}
 
       {generalStatus && <div className={`status ${generalStatus.kind}`}>{generalStatus.message}</div>}
+
+      <section className="card">
+        <h3>אימות מנהל</h3>
+        <p>בחרו את המנהל המבצע והזינו את קוד ה-PIN שלו. נשתמש בפרטים אלו לביצוע שינויים מוגנים בהמשך העמוד.</p>
+        <div className="input-row">
+          <div>
+            <label htmlFor="actingAdmin">מנהל מבצע</label>
+            <select
+              id="actingAdmin"
+              value={actingAdminId === "" ? "" : Number(actingAdminId)}
+              onChange={(event) => {
+                const value = event.target.value ? Number(event.target.value) : "";
+                setActingAdminId(value);
+              }}
+              disabled={effectiveAdmins.length === 0 || isSavingAdmin}
+            >
+              <option value="" disabled>
+                {effectiveAdmins.length === 0 ? "אין מנהלים זמינים" : "בחרו מנהל"}
+              </option>
+              {effectiveAdmins.map((admin) => (
+                <option key={admin.id} value={admin.id}>
+                  {admin.name}
+                  {!admin.active ? " (מושבת)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="actingAdminPin">קוד PIN של המנהל</label>
+            <input
+              id="actingAdminPin"
+              type="password"
+              value={adminPinEntry}
+              onChange={(event) => setAdminPinEntry(event.target.value)}
+              minLength={4}
+              maxLength={12}
+              placeholder="הזינו PIN לפני שמירה"
+              disabled={effectiveAdmins.length === 0}
+            />
+          </div>
+        </div>
+        {!pin_set && (
+          <div className="status error" style={{ marginTop: "0.75rem" }}>
+            טרם הוגדר PIN פעיל. צרו או הפעילו מנהל כדי לאפשר פעולות מוגנות.
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <h3>ניהול מנהלים וקודי PIN</h3>
+        <p>הוסיפו מנהל חדש או עדכנו מנהלים קיימים. מומלץ להחזיק לפחות שני מנהלים פעילים למקרי גיבוי.</p>
+        <form onSubmit={handleCreateAdmin} className="input-row">
+          <div>
+            <label htmlFor="newAdminName">שם מנהל חדש</label>
+            <input
+              id="newAdminName"
+              value={newAdminName}
+              onChange={(event) => setNewAdminName(event.target.value)}
+              placeholder="לדוגמה: מנהל תורן"
+              disabled={isSavingAdmin}
+            />
+          </div>
+          <div>
+            <label htmlFor="newAdminPin">PIN חדש</label>
+            <input
+              id="newAdminPin"
+              type="password"
+              value={newAdminPin}
+              onChange={(event) => setNewAdminPin(event.target.value)}
+              minLength={4}
+              maxLength={12}
+              disabled={isSavingAdmin}
+            />
+          </div>
+          <div>
+            <label htmlFor="newAdminPinConfirm">אימות PIN</label>
+            <input
+              id="newAdminPinConfirm"
+              type="password"
+              value={newAdminPinConfirm}
+              onChange={(event) => setNewAdminPinConfirm(event.target.value)}
+              minLength={4}
+              maxLength={12}
+              disabled={isSavingAdmin}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="secondary" type="submit" disabled={isSavingAdmin}>
+              הוספת מנהל
+            </button>
+          </div>
+        </form>
+        {adminStatus && (
+          <div className={`status ${adminStatus.kind}`} style={{ marginTop: "0.75rem" }}>
+            {adminStatus.message}
+          </div>
+        )}
+        {admins.length === 0 ? (
+          <div className="status warning" style={{ marginTop: "0.75rem" }}>
+            אין מנהלים קיימים. השתמשו בכלי השחזור הייעודי כדי ליצור מנהל ראשי במקרה הצורך.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
+            {admins.map((admin) => {
+              const edits = adminEdits[admin.id] ?? {};
+              const nameValue = edits.name ?? admin.name;
+              const activeValue = edits.active ?? admin.active;
+              const newPinValue = edits.newPin ?? "";
+              return (
+                <form
+                  key={admin.id}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleAdminSave(admin);
+                  }}
+                  className="input-row"
+                  style={{ border: "1px solid #d0d5dd", borderRadius: "0.75rem", padding: "1rem" }}
+                >
+                  <div>
+                    <label>שם המנהל</label>
+                    <input
+                      value={nameValue}
+                      onChange={(event) => updateAdminEdit(admin.id, { name: event.target.value })}
+                      disabled={isSavingAdmin}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "1.5rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={activeValue}
+                        onChange={(event) => updateAdminEdit(admin.id, { active: event.target.checked })}
+                        disabled={isSavingAdmin}
+                      />
+                      פעיל
+                    </label>
+                  </div>
+                  <div>
+                    <label>PIN חדש (אופציונלי)</label>
+                    <input
+                      type="password"
+                      value={newPinValue}
+                      onChange={(event) => updateAdminEdit(admin.id, { newPin: event.target.value })}
+                      minLength={0}
+                      maxLength={12}
+                      placeholder="השאירו ריק כדי לא לשנות"
+                      disabled={isSavingAdmin}
+                    />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "0.75rem" }}>
+                    <button className="primary" type="submit" disabled={isSavingAdmin}>
+                      שמירת שינויים
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => clearAdminEdit(admin.id)}
+                      disabled={isSavingAdmin}
+                    >
+                      איפוס
+                    </button>
+                  </div>
+                </form>
+              );
+            })}
+          </div>
+        )}
+        {admins.filter((admin) => admin.active).length < 2 && admins.length > 0 && (
+          <div className="status warning" style={{ marginTop: "0.75rem" }}>
+            מומלץ להחזיק לפחות שני מנהלים פעילים לצורך שחזור בעת הצורך.
+          </div>
+        )}
+      </section>
 
       <section className="card">
         <h3>מטבע, מותג וצבע</h3>
@@ -541,45 +905,6 @@ const SettingsPage: React.FC = () => {
           </div>
         </form>
         {dbStatus && <div className={`status ${dbStatus.kind}`} style={{ marginTop: "0.75rem" }}>{dbStatus.message}</div>}
-      </section>
-
-      <section className="card">
-        <h3>קוד מנהל (PIN)</h3>
-        <p>{pin_set ? "עדכנו את קוד ה-PIN הקיים." : "צרו קוד PIN חדש כדי לנעול את אזור הניהול."}</p>
-        <form onSubmit={updatePin} className="input-row">
-          {pin_set && (
-            <div>
-              <label htmlFor="currentPin">PIN נוכחי</label>
-              <input
-                id="currentPin"
-                type="password"
-                value={currentPin}
-                onChange={(event) => setCurrentPin(event.target.value)}
-                minLength={4}
-                maxLength={12}
-                required={pin_set}
-              />
-            </div>
-          )}
-          <div>
-            <label htmlFor="newPin">PIN חדש</label>
-            <input
-              id="newPin"
-              type="password"
-              value={newPin}
-              onChange={(event) => setNewPin(event.target.value)}
-              minLength={4}
-              maxLength={12}
-              required
-            />
-          </div>
-        <div style={{ display: "flex", alignItems: "flex-end" }}>
-          <button className="secondary" type="submit">
-            שמירת PIN
-          </button>
-        </div>
-      </form>
-        {pinStatus && <div className={`status ${pinStatus.kind}`} style={{ marginTop: "0.75rem" }}>{pinStatus.message}</div>}
       </section>
 
       <section className="card">

@@ -3,6 +3,12 @@ import { api } from "../api/client";
 
 type DatabaseKey = "primary" | "secondary";
 
+export interface AdminSummary {
+  id: number;
+  name: string;
+  active: boolean;
+}
+
 interface SettingsResponse {
   currency: string;
   pin_set: boolean;
@@ -22,6 +28,7 @@ interface SettingsResponse {
   brand_name: string | null;
   theme_color: string | null;
   show_clock_device_ids: boolean | null;
+  admins: AdminSummary[];
 }
 
 interface Settings {
@@ -43,6 +50,7 @@ interface Settings {
   brand_name: string;
   theme_color: string;
   show_clock_device_ids: boolean;
+  admins: AdminSummary[];
 }
 
 interface SettingsContextValue extends Settings {
@@ -71,15 +79,17 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     schema_ok: true,
     brand_name: "העסק שלי",
     theme_color: "#1b3aa6",
-    show_clock_device_ids: true
+    show_clock_device_ids: true,
+    admins: []
   });
 
   const load = useCallback(async () => {
     const response = await api.get<SettingsResponse>("/settings");
+    const admins = response.data.admins ?? [];
     setSettings((prev) => ({
       ...prev,
       currency: response.data.currency ?? prev.currency,
-      pin_set: response.data.pin_set,
+      pin_set: response.data.pin_set ?? admins.some((admin) => admin.active),
       db_host: response.data.db_host ?? "",
       db_port: response.data.db_port ?? null,
       db_user: response.data.db_user ?? "",
@@ -95,7 +105,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       schema_ok: response.data.schema_ok ?? prev.schema_ok,
       brand_name: response.data.brand_name ?? "העסק שלי",
       theme_color: response.data.theme_color ?? "#1b3aa6",
-      show_clock_device_ids: response.data.show_clock_device_ids ?? prev.show_clock_device_ids
+      show_clock_device_ids: response.data.show_clock_device_ids ?? prev.show_clock_device_ids,
+      admins
     }));
   }, []);
 
@@ -113,7 +124,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [settings.brand_name]);
 
   const setLocal = (partial: Partial<Settings>) => {
-    setSettings((prev) => ({ ...prev, ...partial }));
+    setSettings((prev) => {
+      const next = { ...prev, ...partial };
+      if (partial.admins) {
+        next.pin_set = partial.pin_set ?? partial.admins.some((admin) => admin.active);
+      }
+      return next;
+    });
   };
 
   return <SettingsContext.Provider value={{ ...settings, refresh: load, setLocal }}>{children}</SettingsContext.Provider>;

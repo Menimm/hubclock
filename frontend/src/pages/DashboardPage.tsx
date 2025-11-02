@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { he } from "date-fns/locale";
 import { api, formatApiError } from "../api/client";
 import { useSettings } from "../context/SettingsContext";
+import { useAuth } from "../context/AuthContext";
 
 interface Employee {
   id: number;
@@ -55,11 +56,16 @@ type Mode = "month" | "custom";
 type ReportType = "summary" | "daily";
 type StatusMessage = { kind: "success" | "error"; message: string } | null;
 
+interface AdminCredentials {
+  adminId: number;
+  pin: string;
+}
+
 interface PinModalConfig {
   title: string;
   confirmLabel: string;
   message?: string;
-  onConfirm: (pin: string) => Promise<void>;
+  onConfirm: (credentials: AdminCredentials) => Promise<void>;
 }
 
 const formatMinutesToHHMM = (minutes: number): string => {
@@ -74,7 +80,8 @@ const formatSecondsToHHMM = (seconds: number): string => {
 };
 
 const DashboardPage: React.FC = () => {
-  const { currency, schema_ok } = useSettings();
+  const { currency, schema_ok, admins } = useSettings();
+  const { selectedAdminId, setSelectedAdminId } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [mode, setMode] = useState<Mode>("month");
   const [reportType, setReportType] = useState<ReportType>("summary");
@@ -95,6 +102,15 @@ const DashboardPage: React.FC = () => {
   const [includeDeviceIds, setIncludeDeviceIds] = useState<boolean>(true);
   const [pinModal, setPinModal] = useState<PinModalConfig | null>(null);
   const [pinValue, setPinValue] = useState("");
+  const activeAdmins = useMemo(() => admins.filter((admin) => admin.active), [admins]);
+  const effectiveAdmins = useMemo(() => (activeAdmins.length > 0 ? activeAdmins : admins), [activeAdmins, admins]);
+  const [pinAdminId, setPinAdminId] = useState<number | "">(() => {
+    if (selectedAdminId) {
+      return selectedAdminId;
+    }
+    const fallback = effectiveAdmins[0]?.id;
+    return fallback ?? "";
+  });
   const [pinError, setPinError] = useState<string | null>(null);
   const [isConfirmingPin, setIsConfirmingPin] = useState(false);
   const currencyFormatter = useMemo(
@@ -260,15 +276,21 @@ const DashboardPage: React.FC = () => {
   const openPinModal = (config: PinModalConfig) => {
     setPinValue("");
     setPinError(null);
+    const fallback =
+      (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)
+        ? selectedAdminId
+        : effectiveAdmins[0]?.id) ?? "";
+    setPinAdminId(fallback === "" ? "" : fallback);
     setPinModal(config);
   };
 
-  const performSaveShift = async (pin: string) => {
+  const performSaveShift = async ({ adminId, pin }: AdminCredentials) => {
     if (!editingEntryId) return;
     setIsSavingEntry(true);
     setDailyStatus(null);
     try {
       await api.put(`/time-entries/${editingEntryId}`, {
+        admin_id: adminId,
         pin: pin.trim(),
         clock_in: toNaiveIsoString(editClockIn),
         clock_out: toNaiveIsoString(editClockOut)
@@ -299,7 +321,7 @@ const DashboardPage: React.FC = () => {
     openPinModal({
       title: "אימות עדכון משמרת",
       confirmLabel: "עדכון",
-      onConfirm: async (pin) => performSaveShift(pin)
+      onConfirm: async (credentials) => performSaveShift(credentials)
     });
   };
 
@@ -308,12 +330,12 @@ const DashboardPage: React.FC = () => {
     setDailyStatus(null);
   };
 
-  const performDeleteShift = async (shift: DailyShift, pin: string) => {
+  const performDeleteShift = async (shift: DailyShift, { adminId, pin }: AdminCredentials) => {
     setIsSavingEntry(true);
     setDailyStatus(null);
     try {
       await api.delete(`/time-entries/${shift.entry_id}`, {
-        data: { pin: pin.trim() }
+        data: { admin_id: adminId, pin: pin.trim() }
       });
       if (editingEntryId === shift.entry_id) {
         resetEditingState();
@@ -343,13 +365,17 @@ const DashboardPage: React.FC = () => {
       title: "אימות מחיקת משמרת",
       confirmLabel: "מחיקה",
       message: "המחיקה בלתי הפיכה. האם להמשיך?",
-      onConfirm: async (pin) => performDeleteShift(shift, pin)
+      onConfirm: async (credentials) => performDeleteShift(shift, credentials)
     });
   };
 
   const handlePinSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!pinModal) return;
+    if (pinAdminId === "" || pinAdminId === null) {
+      setPinError("יש לבחור מנהל");
+      return;
+    }
     if (!pinValue.trim()) {
       setPinError("נא להזין קוד PIN");
       return;
@@ -357,7 +383,9 @@ const DashboardPage: React.FC = () => {
     setIsConfirmingPin(true);
     setPinError(null);
     try {
-      await pinModal.onConfirm(pinValue.trim());
+      const adminId = Number(pinAdminId);
+      await pinModal.onConfirm({ adminId, pin: pinValue.trim() });
+      setSelectedAdminId(adminId);
       closePinModal();
     } catch (error) {
       setPinError(formatApiError(error));
@@ -672,6 +700,26 @@ const DashboardPage: React.FC = () => {
           <form className="modal" onSubmit={handlePinSubmit}>
             <h3>{pinModal.title}</h3>
             {pinModal.message && <p style={{ marginTop: 0 }}>{pinModal.message}</p>}
+            <label htmlFor="adminSelect">בחרו מנהל</label>
+            <select
+              id="adminSelect"
+              value={pinAdminId === "" ? "" : Number(pinAdminId)}
+              onChange={(event) => {
+                const selected = event.target.value ? Number(event.target.value) : "";
+                setPinAdminId(selected);
+              }}
+              disabled={isConfirmingPin || isSavingEntry || effectiveAdmins.length === 0}
+            >
+              <option value="" disabled>
+                {effectiveAdmins.length === 0 ? "אין מנהלים זמינים" : "בחרו מנהל"}
+              </option>
+              {effectiveAdmins.map((admin) => (
+                <option key={admin.id} value={admin.id}>
+                  {admin.name}
+                  {!admin.active ? " (מושבת)" : ""}
+                </option>
+              ))}
+            </select>
             <label htmlFor="adminPin">קוד PIN</label>
             <input
               id="adminPin"
@@ -702,7 +750,7 @@ const DashboardPage: React.FC = () => {
               <button
                 type="submit"
                 className="primary"
-                disabled={isConfirmingPin || isSavingEntry}
+                disabled={isConfirmingPin || isSavingEntry || effectiveAdmins.length === 0}
               >
                 {isConfirmingPin ? "מאמת..." : pinModal.confirmLabel}
               </button>
@@ -719,3 +767,17 @@ const DashboardPage: React.FC = () => {
 };
 
 export default DashboardPage;
+  useEffect(() => {
+    if (!effectiveAdmins.length) {
+      setPinAdminId("");
+      return;
+    }
+    if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
+      setPinAdminId(selectedAdminId);
+      return;
+    }
+    const fallback = typeof pinAdminId === "number" && effectiveAdmins.some((admin) => admin.id === pinAdminId)
+      ? pinAdminId
+      : effectiveAdmins[0].id;
+    setPinAdminId(fallback);
+  }, [effectiveAdmins, selectedAdminId, pinAdminId]);

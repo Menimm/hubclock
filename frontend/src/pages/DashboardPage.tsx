@@ -103,16 +103,30 @@ const DashboardPage: React.FC = () => {
   const [pinModal, setPinModal] = useState<PinModalConfig | null>(null);
   const [pinValue, setPinValue] = useState("");
   const activeAdmins = useMemo(() => admins.filter((admin) => admin.active), [admins]);
-  const effectiveAdmins = useMemo(() => (activeAdmins.length > 0 ? activeAdmins : admins), [activeAdmins, admins]);
-  const [pinAdminId, setPinAdminId] = useState<number | "">(() => {
-    if (selectedAdminId) {
+  const effectiveAdmins = useMemo(
+    () => (activeAdmins.length > 0 ? activeAdmins : admins),
+    [activeAdmins, admins]
+  );
+  const [pinAdminId, setPinAdminId] = useState<number | null>(() => {
+    if (selectedAdminId !== null && admins.some((admin) => admin.id === selectedAdminId)) {
       return selectedAdminId;
     }
     const fallback = effectiveAdmins[0]?.id;
-    return fallback ?? "";
+    return fallback ?? null;
   });
   const [pinError, setPinError] = useState<string | null>(null);
   const [isConfirmingPin, setIsConfirmingPin] = useState(false);
+  useEffect(() => {
+    if (!effectiveAdmins.length) {
+      setPinAdminId(null);
+      return;
+    }
+    if (selectedAdminId !== null && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
+      setPinAdminId(selectedAdminId);
+      return;
+    }
+    setPinAdminId(effectiveAdmins[0].id);
+  }, [effectiveAdmins, selectedAdminId]);
   const currencyFormatter = useMemo(
     () =>
       new Intl.NumberFormat("he-IL", {
@@ -276,11 +290,14 @@ const DashboardPage: React.FC = () => {
   const openPinModal = (config: PinModalConfig) => {
     setPinValue("");
     setPinError(null);
-    const fallback =
-      (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)
-        ? selectedAdminId
-        : effectiveAdmins[0]?.id) ?? "";
-    setPinAdminId(fallback === "" ? "" : fallback);
+    if (!effectiveAdmins.length) {
+      setPinAdminId(null);
+    } else {
+      const hasSelectedAdmin =
+        selectedAdminId !== null && effectiveAdmins.some((admin) => admin.id === selectedAdminId);
+      const fallbackId = hasSelectedAdmin ? selectedAdminId! : effectiveAdmins[0].id;
+      setPinAdminId(fallbackId);
+    }
     setPinModal(config);
   };
 
@@ -372,7 +389,7 @@ const DashboardPage: React.FC = () => {
   const handlePinSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!pinModal) return;
-    if (pinAdminId === "" || pinAdminId === null) {
+    if (pinAdminId === null) {
       setPinError("יש לבחור מנהל");
       return;
     }
@@ -383,7 +400,7 @@ const DashboardPage: React.FC = () => {
     setIsConfirmingPin(true);
     setPinError(null);
     try {
-      const adminId = Number(pinAdminId);
+      const adminId = pinAdminId;
       await pinModal.onConfirm({ adminId, pin: pinValue.trim() });
       setSelectedAdminId(adminId);
       closePinModal();
@@ -703,9 +720,9 @@ const DashboardPage: React.FC = () => {
             <label htmlFor="adminSelect">בחרו מנהל</label>
             <select
               id="adminSelect"
-              value={pinAdminId === "" ? "" : Number(pinAdminId)}
+              value={pinAdminId ?? ""}
               onChange={(event) => {
-                const selected = event.target.value ? Number(event.target.value) : "";
+                const selected = event.target.value ? Number(event.target.value) : null;
                 setPinAdminId(selected);
               }}
               disabled={isConfirmingPin || isSavingEntry || effectiveAdmins.length === 0}
@@ -767,17 +784,3 @@ const DashboardPage: React.FC = () => {
 };
 
 export default DashboardPage;
-  useEffect(() => {
-    if (!effectiveAdmins.length) {
-      setPinAdminId("");
-      return;
-    }
-    if (selectedAdminId && effectiveAdmins.some((admin) => admin.id === selectedAdminId)) {
-      setPinAdminId(selectedAdminId);
-      return;
-    }
-    const fallback = typeof pinAdminId === "number" && effectiveAdmins.some((admin) => admin.id === pinAdminId)
-      ? pinAdminId
-      : effectiveAdmins[0].id;
-    setPinAdminId(fallback);
-  }, [effectiveAdmins, selectedAdminId, pinAdminId]);

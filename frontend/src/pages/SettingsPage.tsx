@@ -290,7 +290,7 @@ const SettingsPage: React.FC = () => {
         show_clock_device_ids: showClockDevices
       });
       setGeneralStatus({ kind: "success", message: "ההגדרות נשמרו" });
-      const nextAdmins = response.data.admins ?? admins;
+      const nextAdmins = (response.data.admins ?? admins) as AdminSummary[];
       setLocal({
         currency: response.data.currency ?? currencyValue,
         theme_color: response.data.theme_color ?? themeColor,
@@ -364,7 +364,7 @@ const SettingsPage: React.FC = () => {
         ...payload
       });
       setDbStatus({ kind: "success", message: "הגדרות מסדי הנתונים נשמרו" });
-      const nextAdmins = response.data.admins ?? admins;
+      const nextAdmins = (response.data.admins ?? admins) as AdminSummary[];
       setLocal({
         db_host: response.data.db_host ?? payload.db_host ?? "",
         db_port: response.data.db_port ?? payload.db_port,
@@ -520,7 +520,7 @@ const SettingsPage: React.FC = () => {
               <option value="" disabled>
                 {effectiveAdmins.length === 0 ? "אין מנהלים זמינים" : "בחרו מנהל"}
               </option>
-              {effectiveAdmins.map((admin) => (
+              {effectiveAdmins.map((admin: AdminSummary) => (
                 <option key={admin.id} value={admin.id}>
                   {admin.name}
                   {!admin.active ? " (מושבת)" : ""}
@@ -604,7 +604,7 @@ const SettingsPage: React.FC = () => {
           </div>
         ) : (
           <div style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
-            {admins.map((admin) => {
+            {admins.map((admin: AdminSummary) => {
               const edits = adminEdits[admin.id] ?? {};
               const nameValue = edits.name ?? admin.name;
               const activeValue = edits.active ?? admin.active;
